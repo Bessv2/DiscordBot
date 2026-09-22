@@ -1,0 +1,75 @@
+import { Message, PermissionFlagsBits } from 'discord.js';
+import { GuildConfig } from '@prisma/client';
+import { prisma } from '../lib/db';
+import { config } from '../config';
+import { logger } from '../lib/logger';
+import { postAutomodLog } from '../lib/modlog';
+import { recordMessageAndCheckSpam } from './spam';
+import { containsInviteLink } from './invite';
+import { findBannedWord } from './wordFilter';
+import { isMentionSpam } from './mentionSpam';
+
+export async function runAutomod(message: Message<true>): Promise<void> {
+  const guildConfig = await prisma.guildConfig.findUnique({ where: { id: message.guild.id } });
+  if (!guildConfig?.automodEnabled) return;
+
+  const member = message.member;
+  if (!member) return;
+  // Mods policing their own channels shouldn't get caught by their own filters.
+  if (member.permissions.has(PermissionFlagsBits.ManageMessages)) return;
+
+  const spamKey = `${message.guild.id}:${message.author.id}`;
+  if (recordMessageAndCheckSpam(spamKey, Date.now(), guildConfig.spamMessageLimit, guildConfig.spamIntervalMs)) {
+    await flagMessage(message, guildConfig, 'spam', 'Sending messages too quickly.');
+    return;
+  }
+
+  // Everything past this point needs to read message text/mentions, which
+  // is only reliable with the privileged Message Content intent — see
+  // src/discord/client.ts for why that's opt-in via ENABLE_MESSAGE_CONTENT.
+  if (!config.ENABLE_MESSAGE_CONTENT) return;
+
+  const mentionCount = message.mentions.users.size + message.mentions.roles.size;
+  if (isMentionSpam(mentionCount, guildConfig.mentionSpamLimit)) {
+    await flagMessage(message, guildConfig, 'mention-spam', `Mentioned ${mentionCount} users/roles in one message.`);
+    return;
+  }
+
+  if (guildConfig.inviteFilterOn && containsInviteLink(message.content)) {
+    await flagMessage(message, guildConfig, 'invite-link', 'Posted a Discord invite link.');
+    return;
+  }
+
+  if (guildConfig.wordFilterOn) {
+    const bannedWords: string[] = JSON.parse(guildConfig.bannedWords || '[]');
+    const hit = findBannedWord(message.content, bannedWords);
+    if (hit) {
+      await flagMessage(message, guildConfig, 'word-filter', 'Used a banned word or phrase.');
+      return;
+    }
+  }
+}
+
+async function flagMessage(
+  message: Message<true>,
+  guildConfig: GuildConfig,
+  rule: string,
+  reason: string,
+): Promise<void> {
+  if (message.deletable) {
+    await message.delete().catch((err) => {
+      logger.warn(
+        `Automod could not delete a message in guild ${message.guild.id}: ${(err as Error).message}`,
+        'Grant the bot the Manage Messages permission in that channel.',
+      );
+    });
+  }
+
+  await postAutomodLog(message.guild, {
+    rule,
+    user: message.author,
+    channelId: message.channelId,
+    reason,
+    contentSnippet: guildConfig.logMessageContent ? message.content.slice(0, 500) : undefined,
+  });
+}

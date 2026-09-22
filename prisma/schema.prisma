@@ -1,0 +1,119 @@
+// Prisma schema for the bot's local data store.
+// SQLite by default (zero setup); point DATABASE_URL at a postgresql:// URL
+// to scale up to Postgres without changing any application code.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// One row per guild. Created lazily on first interaction and filled in by
+// the /setup wizard; every field has a working default so the bot is
+// functional before an admin ever runs /setup.
+model GuildConfig {
+  id String @id // Discord guild ID
+
+  modLogChannelId String?
+  setupCompleted  Boolean @default(false)
+
+  // Auto-mod toggles + thresholds — see src/automod for how these are used.
+  automodEnabled    Boolean @default(false)
+  spamMessageLimit  Int     @default(5) // messages
+  spamIntervalMs    Int     @default(5000) // ...within this many ms
+  inviteFilterOn    Boolean @default(false)
+  wordFilterOn      Boolean @default(false)
+  bannedWords       String  @default("[]") // JSON string array
+  mentionSpamLimit  Int     @default(5) // distinct mentions in one message
+
+  // Retention for anything logged from raw message content (auto-mod hits).
+  // 0 = don't store message content at all, only metadata.
+  logMessageContent Boolean @default(false)
+  contentRetainDays Int     @default(30)
+
+  // Legacy prefix commands, opt-in per guild on top of the global env flag.
+  prefixCommandsOn Boolean @default(false)
+  prefix           String  @default("!")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  permissionRoles PermissionRole[]
+  cases           Case[]
+  reminders       Reminder[]
+  polls           Poll[]
+
+  @@map("guild_configs")
+}
+
+// Config-driven permission gate on top of Discord's own permission system.
+// A scope with no rows falls back to a sane native-Discord-permission
+// default (see src/lib/permissions.ts); adding a row restricts that scope
+// to members holding one of the listed roles, full stop.
+model PermissionRole {
+  id      Int    @id @default(autoincrement())
+  guildId String
+  roleId  String
+  scope   String // "moderation" | "admin" | "utility"
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, roleId, scope])
+  @@map("permission_roles")
+}
+
+// One row per moderation action. caseNumber is per-guild and sequential so
+// hosts can reference "case #42" the way they'd reference a ticket number.
+model Case {
+  id           Int      @id @default(autoincrement())
+  guildId      String
+  caseNumber   Int
+  type         String // "warn" | "kick" | "ban" | "timeout"
+  targetId     String
+  targetTag    String
+  moderatorId  String
+  moderatorTag String
+  reason       String?
+  durationMs   Int? // set for timeouts
+  createdAt    DateTime @default(now())
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, caseNumber])
+  @@index([guildId, targetId])
+  @@map("cases")
+}
+
+model Reminder {
+  id        Int      @id @default(autoincrement())
+  guildId   String
+  userId    String
+  channelId String
+  message   String
+  remindAt  DateTime
+  fired     Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([fired, remindAt])
+  @@map("reminders")
+}
+
+model Poll {
+  id        Int      @id @default(autoincrement())
+  guildId   String
+  channelId String
+  messageId String?
+  question  String
+  options   String // JSON string array
+  createdBy String
+  createdAt DateTime @default(now())
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@map("polls")
+}
