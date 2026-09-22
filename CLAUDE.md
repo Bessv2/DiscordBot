@@ -87,6 +87,9 @@ Non-negotiables:
 - [ ] Optional game stats lookups (Steam, Riot, etc.) — API-key-gated, fails gracefully with a clear "not configured" message when no key is set
 - [ ] Simple tournament/bracket tracker for community game nights
 - [ ] Twitch/YouTube live-stream notifications, filterable by game
+- [ ] Economy/bank system — user credits, slot machine, leaderboard
+- [ ] Trivia module with custom/importable question lists
+- [ ] Reaction-role self-assignment (emoji opt-in — distinct from the XP-based role rewards above)
 
 All of these are plugin-architecture candidates — a host running a pure moderation setup should never load this code or pay its resource cost unless they turn it on.
 
@@ -96,9 +99,17 @@ All of these are plugin-architecture candidates — a host running a pure modera
 - [ ] Plugin architecture so a host can drop in a custom command/module without forking core
 - [ ] Web dashboard (self-hosted, same box) as an alternative to slash-command config — explicitly optional, bot must be fully usable without it
 - [ ] Cross-server ban-list sharing for trusted server networks (opt-in, host-controlled trust list — never a shared cloud service by default)
+- [ ] Cross-server announcement broadcasting for server networks (opt-in, distinct from the ban-list sharing above)
 - [ ] Audit-log export (CSV/JSON) for servers that need compliance records
 
 Every item above should be gated so a host running only the core feels no weight from the features they haven't turned on.
+
+**Explicitly out of scope for now:**
+
+- Music playback (YouTube/SoundCloud streaming) — heavy dependency footprint (ffmpeg, voice pipeline), conflicts with the resource-conscious principle (§2) unless it ever ships as a clearly optional, clearly heavy module
+- Community plugin index / full 3rd-party cog marketplace — meaningful trust/security surface (running community-submitted code); revisit only once core is stable
+
+The plugin architecture and "no coding required" onboarding goals above are a proven pattern, not a novel risk — validated by [Red-DiscordBot](https://github.com/Cog-Creators/Red-DiscordBot), a long-running, widely used self-hosted Python/discord.py bot with a mature cog ecosystem running exactly this model at scale.
 
 ## 6. Self-Hosting Requirements
 
