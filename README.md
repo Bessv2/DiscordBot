@@ -69,6 +69,7 @@ SQLite is the zero-setup default. To scale up:
 
 - [`docs/BACKUP.md`](./docs/BACKUP.md) — one command to back up the database.
 - [`docs/UPGRADING.md`](./docs/UPGRADING.md) — pulling a new version and running migrations without losing data.
+- [`docs/TESTING.md`](./docs/TESTING.md) — a self-contained walkthrough for a friend/tester to clone this, stand up their own bot, and try it against a throwaway server.
 
 ## Health checks & troubleshooting
 
