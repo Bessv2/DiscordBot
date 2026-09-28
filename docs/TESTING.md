@@ -29,11 +29,15 @@ Use a server you own or have admin on — ideally a throwaway test server, since
 
 ## 4. Configure and start it
 
+`.env` is never committed to the repo — that's what would leak a bot token to anyone with clone access — so a fresh clone will only ever have `.env.example`. You need to create your own `.env` from it:
+
 ```bash
-cp .env.example .env
+cp .env.example .env          # macOS/Linux/WSL
+Copy-Item .env.example .env   # Windows PowerShell
+copy .env.example .env        # Windows cmd.exe
 ```
 
-Open `.env` and fill in `DISCORD_TOKEN` and `DISCORD_CLIENT_ID` from step 2. Every other variable already has a working default — see `.env.example` for what each one does.
+Then open the new **`.env`** file (not `.env.example` — that one's just the template and is never read by the app) and fill in `DISCORD_TOKEN` and `DISCORD_CLIENT_ID` from step 2. Every other variable already has a working default — see `.env.example` for what each one does.
 
 **With Docker (recommended):**
 ```bash
