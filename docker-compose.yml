@@ -1,0 +1,10 @@
+services:
+  bot:
+    build: .
+    container_name: discord-mod-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # The SQLite database lives here so it survives image rebuilds/upgrades.
+      - ./data:/app/data

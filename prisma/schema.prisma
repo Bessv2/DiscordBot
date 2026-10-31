@@ -1,0 +1,435 @@
+// Prisma schema for the bot's local data store.
+// SQLite by default (zero setup); point DATABASE_URL at a postgresql:// URL
+// to scale up to Postgres without changing any application code.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// One row per guild. Created lazily on first interaction and filled in by
+// the /setup wizard; every field has a working default so the bot is
+// functional before an admin ever runs /setup.
+model GuildConfig {
+  id String @id // Discord guild ID
+
+  modLogChannelId String?
+  setupCompleted  Boolean @default(false)
+
+  // Auto-mod toggles + thresholds — see src/automod for how these are used.
+  automodEnabled   Boolean @default(false)
+  spamMessageLimit Int     @default(5) // messages
+  spamIntervalMs   Int     @default(5000) // ...within this many ms
+  inviteFilterOn   Boolean @default(false)
+  wordFilterOn     Boolean @default(false)
+  bannedWords      String  @default("[]") // JSON string array
+  mentionSpamLimit Int     @default(5) // distinct mentions in one message
+
+  // Retention for anything logged from raw message content (auto-mod hits).
+  // 0 = don't store message content at all, only metadata.
+  logMessageContent Boolean @default(false)
+  contentRetainDays Int     @default(30)
+
+  // Legacy prefix commands, opt-in per guild on top of the global env flag.
+  prefixCommandsOn Boolean @default(false)
+  prefix           String  @default("!")
+
+  // Anti-raid: flag a burst of joins within a window, optionally raise the
+  // server's verification level automatically until a mod clears it.
+  antiRaidEnabled   Boolean @default(false)
+  raidJoinThreshold Int     @default(10) // joins...
+  raidIntervalMs    Int     @default(60000) // ...within this many ms
+  raidAutoLockdown  Boolean @default(false)
+  lockdownActive    Boolean @default(false)
+  // Verification level before lockdown, so /lockdown off can restore it
+  // instead of guessing or leaving the server on High/Very High forever.
+  preLockdownVerificationLevel Int?
+
+  // Role-based /mute, which complements native /timeout (capped at 28 days
+  // by Discord) for longer or indefinite mutes. Created/looked up lazily.
+  muteRoleId String?
+
+  // Where appeal submissions (from the "Appeal" button on a mod-action DM)
+  // get posted for staff review. Falls back to modLogChannelId if unset.
+  appealChannelId String?
+
+  // Leveling/XP — message-based, with a per-user cooldown so one burst of
+  // messages can't farm levels.
+  xpEnabled     Boolean @default(false)
+  xpMinPerMsg   Int     @default(15)
+  xpMaxPerMsg   Int     @default(25)
+  xpCooldownSec Int     @default(60)
+
+  // Starboard
+  starboardChannelId String?
+  starboardEmoji     String  @default("⭐")
+  starboardThreshold Int     @default(5)
+
+  // Welcome/goodbye — requires the privileged GuildMembers intent
+  // (ENABLE_GUILD_MEMBERS=true), since guildMemberAdd/Remove don't fire
+  // reliably without it. Templates support {user}, {server}, {membercount}.
+  welcomeEnabled   Boolean @default(false)
+  welcomeChannelId String?
+  welcomeMessage   String  @default("Welcome {user} to {server}! We're now {membercount} members strong.")
+  goodbyeChannelId String?
+  goodbyeMessage   String  @default("{user} has left {server}.")
+
+  // Birthdays
+  birthdayChannelId String?
+  birthdayRoleId    String?
+
+  // Economy/bank
+  economyEnabled         Boolean @default(false)
+  economyDailyAmount     Int     @default(100)
+  economyStartingBalance Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  permissionRoles        PermissionRole[]
+  cases                  Case[]
+  reminders              Reminder[]
+  polls                  Poll[]
+  mutes                  Mute[]
+  channelAutomodOverride ChannelAutomodOverride[]
+  appeals                Appeal[]
+  tags                   Tag[]
+  userXp                 UserXp[]
+  levelRoleRewards       LevelRoleReward[]
+  starboardPosts         StarboardPost[]
+  birthdays              Birthday[]
+  quotes                 Quote[]
+  reactionRoles          ReactionRole[]
+  wallets                Wallet[]
+  triviaQuestions        TriviaQuestion[]
+  streamNotifications    StreamNotification[]
+  lfgPosts               LfgPost[]
+  tournaments            Tournament[]
+  voiceActivityRoles     VoiceActivityRole[]
+
+  @@map("guild_configs")
+}
+
+// Config-driven permission gate on top of Discord's own permission system.
+// A scope with no rows falls back to a sane native-Discord-permission
+// default (see src/lib/permissions.ts); adding a row restricts that scope
+// to members holding one of the listed roles, full stop.
+model PermissionRole {
+  id      Int    @id @default(autoincrement())
+  guildId String
+  roleId  String
+  scope   String // "moderation" | "admin" | "utility"
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, roleId, scope])
+  @@map("permission_roles")
+}
+
+// One row per moderation action. caseNumber is per-guild and sequential so
+// hosts can reference "case #42" the way they'd reference a ticket number.
+model Case {
+  id           Int      @id @default(autoincrement())
+  guildId      String
+  caseNumber   Int
+  type         String // "warn" | "kick" | "ban" | "timeout" | "mute"
+  targetId     String
+  targetTag    String
+  moderatorId  String
+  moderatorTag String
+  reason       String?
+  durationMs   Int? // set for timeouts/mutes
+  createdAt    DateTime @default(now())
+
+  guild   GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  appeals Appeal[]
+
+  @@unique([guildId, caseNumber])
+  @@index([guildId, targetId])
+  @@map("cases")
+}
+
+model Reminder {
+  id        Int      @id @default(autoincrement())
+  guildId   String
+  userId    String
+  channelId String
+  message   String
+  remindAt  DateTime
+  fired     Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([fired, remindAt])
+  @@map("reminders")
+}
+
+model Poll {
+  id        Int      @id @default(autoincrement())
+  guildId   String
+  channelId String
+  messageId String?
+  question  String
+  options   String // JSON string array
+  createdBy String
+  createdAt DateTime @default(now())
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@map("polls")
+}
+
+// Role-based mute, tracked so the scheduler can auto-unmute. expiresAt null
+// means indefinite (cleared manually with /unmute).
+model Mute {
+  id        Int       @id @default(autoincrement())
+  guildId   String
+  userId    String
+  active    Boolean   @default(true)
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([active, expiresAt])
+  @@map("mutes")
+}
+
+// Per-channel exemptions from guild-wide auto-mod rules (e.g. a bot-commands
+// channel where invite links and spam-rate limits don't apply).
+model ChannelAutomodOverride {
+  id                Int     @id @default(autoincrement())
+  guildId           String
+  channelId         String
+  exemptSpam        Boolean @default(false)
+  exemptInvite      Boolean @default(false)
+  exemptWordFilter  Boolean @default(false)
+  exemptMentionSpam Boolean @default(false)
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, channelId])
+  @@map("channel_automod_overrides")
+}
+
+// A user's appeal of a moderation action, submitted via the "Appeal" button
+// on their mod-action DM. Staff resolve it with Accept/Deny buttons in the
+// appeal channel, which can reverse the action (e.g. unmute, unban).
+model Appeal {
+  id         Int       @id @default(autoincrement())
+  guildId    String
+  caseId     Int
+  userId     String
+  message    String
+  status     String    @default("pending") // "pending" | "accepted" | "denied"
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
+  resolvedBy String?
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  case  Case        @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@map("appeals")
+}
+
+// Custom tag/command system — hosts define their own text responses
+// without touching code. Triggered via /tag show or, with legacy prefix
+// commands on, "!<name>" directly.
+model Tag {
+  id        Int      @id @default(autoincrement())
+  guildId   String
+  name      String
+  content   String
+  createdBy String
+  createdAt DateTime @default(now())
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, name])
+  @@map("tags")
+}
+
+model UserXp {
+  id            Int       @id @default(autoincrement())
+  guildId       String
+  userId        String
+  xp            Int       @default(0)
+  level         Int       @default(0)
+  lastMessageAt DateTime?
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, userId])
+  @@index([guildId, xp])
+  @@map("user_xp")
+}
+
+model LevelRoleReward {
+  id      Int    @id @default(autoincrement())
+  guildId String
+  level   Int
+  roleId  String
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, level])
+  @@map("level_role_rewards")
+}
+
+// Tracks which messages have already been starboarded so a repeated
+// reaction updates the star count instead of posting a duplicate.
+model StarboardPost {
+  id                 Int      @id @default(autoincrement())
+  guildId            String
+  originalMessageId  String
+  originalChannelId  String
+  starboardMessageId String
+  starCount          Int      @default(1)
+  createdAt          DateTime @default(now())
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, originalMessageId])
+  @@map("starboard_posts")
+}
+
+model Birthday {
+  id      Int    @id @default(autoincrement())
+  guildId String
+  userId  String
+  month   Int // 1-12
+  day     Int // 1-31
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, userId])
+  @@index([guildId, month, day])
+  @@map("birthdays")
+}
+
+model Quote {
+  id            Int      @id @default(autoincrement())
+  guildId       String
+  content       String
+  quotedUserTag String
+  addedBy       String
+  createdAt     DateTime @default(now())
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@map("quotes")
+}
+
+// Reaction-role self-assignment. On messageReactionAdd/Remove matching a
+// row here, the bot adds/removes the mapped role — distinct from the
+// XP-based level role rewards above.
+model ReactionRole {
+  id        Int    @id @default(autoincrement())
+  guildId   String
+  messageId String
+  channelId String
+  emoji     String
+  roleId    String
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, messageId, emoji])
+  @@map("reaction_roles")
+}
+
+model Wallet {
+  id          Int       @id @default(autoincrement())
+  guildId     String
+  userId      String
+  balance     Int       @default(0)
+  lastDailyAt DateTime?
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, userId])
+  @@index([guildId, balance])
+  @@map("wallets")
+}
+
+// Guild-specific imported trivia questions. The bot also ships a small
+// default pack (src/data/trivia-default.json) that's always available and
+// never touches the database.
+model TriviaQuestion {
+  id           Int      @id @default(autoincrement())
+  guildId      String
+  question     String
+  choices      String // JSON string array
+  correctIndex Int
+  createdAt    DateTime @default(now())
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@map("trivia_questions")
+}
+
+model StreamNotification {
+  id              Int      @id @default(autoincrement())
+  guildId         String
+  channelId       String
+  platform        String // "twitch" | "youtube"
+  channelName     String // the streamer's handle/channel on that platform
+  lastAnnouncedId String?
+  createdAt       DateTime @default(now())
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, platform, channelName])
+  @@map("stream_notifications")
+}
+
+model LfgPost {
+  id        Int      @id @default(autoincrement())
+  guildId   String
+  channelId String
+  messageId String?
+  game      String
+  hostId    String
+  maxSize   Int
+  memberIds String // JSON string array of user IDs, host included
+  status    String   @default("open") // "open" | "closed"
+  createdAt DateTime @default(now())
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@map("lfg_posts")
+}
+
+model Tournament {
+  id           Int      @id @default(autoincrement())
+  guildId      String
+  name         String
+  participants String // JSON string array of user IDs
+  bracket      String // JSON — see src/lib/bracket.ts for shape
+  status       String   @default("open") // "open" | "in_progress" | "complete"
+  createdBy    String
+  createdAt    DateTime @default(now())
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@map("tournaments")
+}
+
+// Maps a game-activity name (matched from Discord Rich Presence) to a role
+// to auto-assign while playing. Requires the privileged GuildPresences
+// intent (ENABLE_PRESENCE=true) — see src/activityRoles for why.
+model VoiceActivityRole {
+  id              Int    @id @default(autoincrement())
+  guildId         String
+  gameNamePattern String // case-insensitive substring match against Activity#name
+  roleId          String
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, gameNamePattern])
+  @@map("voice_activity_roles")
+}
