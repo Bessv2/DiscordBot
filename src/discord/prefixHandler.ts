@@ -75,7 +75,11 @@ export async function handlePrefixCommand(message: Message<true>): Promise<void>
       await message.reply(`Recent cases for ${who.tag}:\n${lines.join('\n')}`);
       return;
     }
-    default:
+    default: {
+      // Not a built-in command — check if it's a custom tag (e.g. "!welcome-faq").
+      const tag = await prisma.tag.findUnique({ where: { guildId_name: { guildId: message.guild.id, name: commandName } } });
+      if (tag) await message.channel.send(tag.content).catch(() => undefined);
       return;
+    }
   }
 }

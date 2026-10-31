@@ -2,11 +2,11 @@ import { Client } from 'discord.js';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { prisma } from '../lib/db';
-import { startReminderScheduler } from '../reminders/scheduler';
+import { startScheduler } from '../scheduler';
 
 export function ready(client: Client<true>): void {
   logger.info(`Logged in as ${client.user.tag} — serving ${client.guilds.cache.size} guild(s).`);
-  startReminderScheduler(client);
+  startScheduler(client);
   void warnIfContentFiltersDisabled();
 }
 

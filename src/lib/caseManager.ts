@@ -3,7 +3,7 @@ import { prisma, getOrCreateGuildConfig } from './db';
 
 export interface CreateCaseInput {
   guildId: string;
-  type: 'warn' | 'kick' | 'ban' | 'timeout';
+  type: 'warn' | 'kick' | 'ban' | 'timeout' | 'mute';
   targetId: string;
   targetTag: string;
   moderatorId: string;

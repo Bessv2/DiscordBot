@@ -27,6 +27,27 @@ const envSchema = z.object({
     .optional()
     .transform((v) => v === 'true'),
   PREFIX: z.string().min(1).default('!'),
+
+  // Privileged — gates guildMemberAdd/Remove (welcome/goodbye) since they
+  // don't fire reliably without it. See src/discord/client.ts.
+  ENABLE_GUILD_MEMBERS: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
+  // Privileged — gates presenceUpdate (voice-channel activity roles).
+  ENABLE_PRESENCE: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
+
+  // Optional integrations below — every one of them fails closed (feature
+  // just doesn't run, logged once) rather than crashing when unset.
+  TWITCH_CLIENT_ID: z.string().optional(),
+  TWITCH_CLIENT_SECRET: z.string().optional(),
+  YOUTUBE_API_KEY: z.string().optional(),
+  STEAM_API_KEY: z.string().optional(),
+  RIOT_API_KEY: z.string().optional(),
+
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('production'),
 });

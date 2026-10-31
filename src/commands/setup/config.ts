@@ -62,6 +62,33 @@ export const configCommand: Command = {
             .addChoices({ name: 'add', value: 'add' }, { name: 'remove', value: 'remove' }),
         ),
     )
+    .addSubcommand((sc) =>
+      sc
+        .setName('antiraid')
+        .setDescription('Configure anti-raid join-rate detection')
+        .addBooleanOption((o) => o.setName('enabled').setDescription('Enable anti-raid detection?').setRequired(true))
+        .addIntegerOption((o) => o.setName('join_threshold').setDescription('Joins before flagging a raid').setRequired(false))
+        .addIntegerOption((o) => o.setName('interval_seconds').setDescription('...within this many seconds').setRequired(false))
+        .addBooleanOption((o) => o.setName('auto_lockdown').setDescription('Automatically raise verification level when flagged?').setRequired(false)),
+    )
+    .addSubcommand((sc) =>
+      sc
+        .setName('channel-override')
+        .setDescription('Exempt a channel from specific auto-mod rules')
+        .addChannelOption((o) => o.setName('channel').setDescription('The channel to configure').setRequired(true))
+        .addBooleanOption((o) => o.setName('exempt_spam').setDescription('Exempt from flood/spam detection?').setRequired(false))
+        .addBooleanOption((o) => o.setName('exempt_invite').setDescription('Exempt from the invite-link filter?').setRequired(false))
+        .addBooleanOption((o) => o.setName('exempt_wordfilter').setDescription('Exempt from the word filter?').setRequired(false))
+        .addBooleanOption((o) => o.setName('exempt_mentionspam').setDescription('Exempt from mention-spam detection?').setRequired(false)),
+    )
+    .addSubcommand((sc) =>
+      sc
+        .setName('appeal-channel')
+        .setDescription('Set where member appeals get posted for review')
+        .addChannelOption((o) =>
+          o.setName('channel').setDescription('Defaults to the mod-log channel if unset').addChannelTypes(ChannelType.GuildText).setRequired(true),
+        ),
+    )
     .setDMPermission(false) as SlashCommandData,
   scope: 'admin',
   nativePermission: PermissionFlagsBits.ManageGuild,
@@ -125,6 +152,57 @@ export const configCommand: Command = {
         });
         return;
       }
+      case 'antiraid': {
+        const enabled = interaction.options.getBoolean('enabled', true);
+        const joinThreshold = interaction.options.getInteger('join_threshold');
+        const intervalSeconds = interaction.options.getInteger('interval_seconds');
+        const autoLockdown = interaction.options.getBoolean('auto_lockdown');
+
+        await prisma.guildConfig.update({
+          where: { id: guildId },
+          data: {
+            antiRaidEnabled: enabled,
+            ...(joinThreshold !== null ? { raidJoinThreshold: joinThreshold } : {}),
+            ...(intervalSeconds !== null ? { raidIntervalMs: intervalSeconds * 1000 } : {}),
+            ...(autoLockdown !== null ? { raidAutoLockdown: autoLockdown } : {}),
+          },
+        });
+        await interaction.reply({ content: `Anti-raid is now ${enabled ? 'on' : 'off'}.`, ephemeral: true });
+        return;
+      }
+      case 'channel-override': {
+        const channel = interaction.options.getChannel('channel', true);
+        const exemptSpam = interaction.options.getBoolean('exempt_spam');
+        const exemptInvite = interaction.options.getBoolean('exempt_invite');
+        const exemptWordFilter = interaction.options.getBoolean('exempt_wordfilter');
+        const exemptMentionSpam = interaction.options.getBoolean('exempt_mentionspam');
+
+        await prisma.channelAutomodOverride.upsert({
+          where: { guildId_channelId: { guildId, channelId: channel.id } },
+          create: {
+            guildId,
+            channelId: channel.id,
+            exemptSpam: exemptSpam ?? false,
+            exemptInvite: exemptInvite ?? false,
+            exemptWordFilter: exemptWordFilter ?? false,
+            exemptMentionSpam: exemptMentionSpam ?? false,
+          },
+          update: {
+            ...(exemptSpam !== null ? { exemptSpam } : {}),
+            ...(exemptInvite !== null ? { exemptInvite } : {}),
+            ...(exemptWordFilter !== null ? { exemptWordFilter } : {}),
+            ...(exemptMentionSpam !== null ? { exemptMentionSpam } : {}),
+          },
+        });
+        await interaction.reply({ content: `Updated auto-mod overrides for <#${channel.id}>.`, ephemeral: true });
+        return;
+      }
+      case 'appeal-channel': {
+        const channel = interaction.options.getChannel('channel', true);
+        await prisma.guildConfig.update({ where: { id: guildId }, data: { appealChannelId: channel.id } });
+        await interaction.reply({ content: `Appeal channel set to <#${channel.id}>.`, ephemeral: true });
+        return;
+      }
     }
   },
 };
@@ -144,6 +222,8 @@ async function buildViewEmbed(guildId: string): Promise<EmbedBuilder> {
       { name: 'Word filter', value: gc.wordFilterOn ? `on (${bannedWords.length} word[s])` : 'off', inline: true },
       { name: 'Spam threshold', value: `${gc.spamMessageLimit} msgs / ${gc.spamIntervalMs / 1000}s`, inline: true },
       { name: 'Mention spam limit', value: `${gc.mentionSpamLimit}`, inline: true },
+      { name: 'Anti-raid', value: gc.antiRaidEnabled ? `on (${gc.raidJoinThreshold}/${gc.raidIntervalMs / 1000}s)` : 'off', inline: true },
+      { name: 'Appeal channel', value: gc.appealChannelId ? `<#${gc.appealChannelId}>` : 'uses mod-log', inline: true },
       { name: 'Moderation roles', value: modRoles.length ? modRoles.map((r) => `<@&${r}>`).join(' ') : 'not restricted' },
       { name: 'Admin roles', value: adminRoles.length ? adminRoles.map((r) => `<@&${r}>`).join(' ') : 'not restricted' },
       { name: 'Setup completed', value: gc.setupCompleted ? 'yes' : 'no — run /setup' },

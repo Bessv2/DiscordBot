@@ -7,12 +7,15 @@ const ACTION_COLOR: Record<string, number> = {
   kick: 0xe67e22,
   ban: 0xe74c3c,
   timeout: 0x9b59b6,
+  mute: 0x9b59b6,
+  unmute: 0x2ecc71,
   automod: 0x3498db,
 };
 
 export interface ModLogEntry {
-  type: 'warn' | 'kick' | 'ban' | 'timeout';
-  caseNumber: number;
+  type: 'warn' | 'kick' | 'ban' | 'timeout' | 'mute' | 'unmute';
+  /** Omitted for actions (like unmute) that resolve an existing case rather than opening a new one. */
+  caseNumber?: number;
   target: User;
   moderator: User;
   reason: string | null;
@@ -59,7 +62,7 @@ export async function postModLog(guild: Guild, entry: ModLogEntry): Promise<void
 
   const embed = new EmbedBuilder()
     .setColor(ACTION_COLOR[entry.type] ?? 0x95a5a6)
-    .setTitle(`Case #${entry.caseNumber} · ${entry.type.toUpperCase()}`)
+    .setTitle(entry.caseNumber ? `Case #${entry.caseNumber} · ${entry.type.toUpperCase()}` : entry.type.toUpperCase())
     .addFields(
       { name: 'Member', value: `${entry.target} (${entry.target.tag})`, inline: true },
       { name: 'Moderator', value: `${entry.moderator} (${entry.moderator.tag})`, inline: true },

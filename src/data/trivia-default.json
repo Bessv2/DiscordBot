@@ -1,0 +1,12 @@
+[
+  { "question": "What year was Discord launched?", "choices": ["2013", "2015", "2017", "2019"], "correctIndex": 1 },
+  { "question": "What is the capital of Australia?", "choices": ["Sydney", "Melbourne", "Canberra", "Perth"], "correctIndex": 2 },
+  { "question": "Which planet is known as the Red Planet?", "choices": ["Venus", "Mars", "Jupiter", "Mercury"], "correctIndex": 1 },
+  { "question": "How many sides does a hexagon have?", "choices": ["5", "6", "7", "8"], "correctIndex": 1 },
+  { "question": "What is the largest ocean on Earth?", "choices": ["Atlantic", "Indian", "Arctic", "Pacific"], "correctIndex": 3 },
+  { "question": "Who wrote 'Romeo and Juliet'?", "choices": ["Charles Dickens", "William Shakespeare", "Mark Twain", "Jane Austen"], "correctIndex": 1 },
+  { "question": "What gas do plants absorb from the atmosphere?", "choices": ["Oxygen", "Nitrogen", "Carbon dioxide", "Hydrogen"], "correctIndex": 2 },
+  { "question": "How many strings does a standard guitar have?", "choices": ["4", "5", "6", "7"], "correctIndex": 2 },
+  { "question": "What is the chemical symbol for gold?", "choices": ["Go", "Gd", "Au", "Ag"], "correctIndex": 2 },
+  { "question": "Which country gifted the Statue of Liberty to the USA?", "choices": ["United Kingdom", "Spain", "France", "Italy"], "correctIndex": 2 }
+]

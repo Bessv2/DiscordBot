@@ -2,6 +2,7 @@ import { Guild, GuildMember, User } from 'discord.js';
 import { checkModerationHierarchy } from './moderationGuard';
 import { createCase } from './caseManager';
 import { postModLog } from './modlog';
+import { buildAppealButtonRow } from './appealActions';
 
 // Core moderation actions, kept independent of *how* they were invoked
 // (slash command vs. opt-in legacy prefix command) so there is exactly one
@@ -27,11 +28,6 @@ export async function warnMember(
   const hierarchy = checkModerationHierarchy(guild, invoker, target, botMember);
   if (!hierarchy.allowed) return { ok: false, message: hierarchy.reason! };
 
-  const dmOk = await target
-    .send(`You were warned in **${guild.name}**${reason ? `: ${reason}` : '.'}`)
-    .then(() => true)
-    .catch(() => false);
-
   const record = await createCase({
     guildId: guild.id,
     type: 'warn',
@@ -41,13 +37,16 @@ export async function warnMember(
     moderatorTag: moderator.tag,
     reason,
   });
-  await postModLog(guild, {
-    type: 'warn',
-    caseNumber: record.caseNumber,
-    target: target.user,
-    moderator,
-    reason,
-  });
+
+  const dmOk = await target
+    .send({
+      content: `You were warned in **${guild.name}**${reason ? `: ${reason}` : '.'}`,
+      components: [buildAppealButtonRow(record.id)],
+    })
+    .then(() => true)
+    .catch(() => false);
+
+  await postModLog(guild, { type: 'warn', caseNumber: record.caseNumber, target: target.user, moderator, reason });
 
   return {
     ok: true,
@@ -70,9 +69,6 @@ export async function kickMember(
     return { ok: false, message: "I don't have permission to kick that member." };
   }
 
-  await target.send(`You were kicked from **${guild.name}**${reason ? `: ${reason}` : '.'}`).catch(() => null);
-  await target.kick(reason ?? undefined);
-
   const record = await createCase({
     guildId: guild.id,
     type: 'kick',
@@ -82,13 +78,16 @@ export async function kickMember(
     moderatorTag: moderator.tag,
     reason,
   });
-  await postModLog(guild, {
-    type: 'kick',
-    caseNumber: record.caseNumber,
-    target: target.user,
-    moderator,
-    reason,
-  });
+
+  await target
+    .send({
+      content: `You were kicked from **${guild.name}**${reason ? `: ${reason}` : '.'}`,
+      components: [buildAppealButtonRow(record.id)],
+    })
+    .catch(() => null);
+  await target.kick(reason ?? undefined);
+
+  await postModLog(guild, { type: 'kick', caseNumber: record.caseNumber, target: target.user, moderator, reason });
 
   return { ok: true, message: `Kicked ${target.user.tag} (case #${record.caseNumber})`, caseNumber: record.caseNumber };
 }
@@ -114,14 +113,6 @@ export async function banMember(
     return { ok: false, message: "You can't ban yourself or the bot." };
   }
 
-  await targetUser.send(`You were banned from **${guild.name}**${reason ? `: ${reason}` : '.'}`).catch(() => null);
-
-  try {
-    await guild.members.ban(targetUser.id, { reason: reason ?? undefined, deleteMessageSeconds });
-  } catch (err) {
-    return { ok: false, message: `Discord rejected the ban: ${(err as Error).message}` };
-  }
-
   const record = await createCase({
     guildId: guild.id,
     type: 'ban',
@@ -131,13 +122,21 @@ export async function banMember(
     moderatorTag: moderator.tag,
     reason,
   });
-  await postModLog(guild, {
-    type: 'ban',
-    caseNumber: record.caseNumber,
-    target: targetUser,
-    moderator,
-    reason,
-  });
+
+  await targetUser
+    .send({
+      content: `You were banned from **${guild.name}**${reason ? `: ${reason}` : '.'}`,
+      components: [buildAppealButtonRow(record.id)],
+    })
+    .catch(() => null);
+
+  try {
+    await guild.members.ban(targetUser.id, { reason: reason ?? undefined, deleteMessageSeconds });
+  } catch (err) {
+    return { ok: false, message: `Discord rejected the ban: ${(err as Error).message}` };
+  }
+
+  await postModLog(guild, { type: 'ban', caseNumber: record.caseNumber, target: targetUser, moderator, reason });
 
   return { ok: true, message: `Banned ${targetUser.tag} (case #${record.caseNumber})`, caseNumber: record.caseNumber };
 }
@@ -157,11 +156,6 @@ export async function timeoutMember(
     return { ok: false, message: "I don't have permission to time out that member." };
   }
 
-  await target.timeout(durationMs, reason ?? undefined);
-  await target
-    .send(`You were timed out in **${guild.name}**${reason ? `: ${reason}` : '.'}`)
-    .catch(() => null);
-
   const record = await createCase({
     guildId: guild.id,
     type: 'timeout',
@@ -172,14 +166,16 @@ export async function timeoutMember(
     reason,
     durationMs,
   });
-  await postModLog(guild, {
-    type: 'timeout',
-    caseNumber: record.caseNumber,
-    target: target.user,
-    moderator,
-    reason,
-    durationMs,
-  });
+
+  await target.timeout(durationMs, reason ?? undefined);
+  await target
+    .send({
+      content: `You were timed out in **${guild.name}**${reason ? `: ${reason}` : '.'}`,
+      components: [buildAppealButtonRow(record.id)],
+    })
+    .catch(() => null);
+
+  await postModLog(guild, { type: 'timeout', caseNumber: record.caseNumber, target: target.user, moderator, reason, durationMs });
 
   return {
     ok: true,
