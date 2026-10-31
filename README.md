@@ -162,6 +162,7 @@ Database changes are applied automatically, and slash commands update by themsel
 | No invite link in the log | It's only printed while the bot isn't in a server yet. Once it's in one, the log shows `Invite link (to add the bot to another server)`. |
 | Slash commands don't show up | Wait a few minutes and restart Discord. Check the log says `Registered ... slash commands`. Make sure you invited the bot with the link from its log. |
 | The bot says it can't kick/ban/time out someone, or `Missing Permissions` | Drag the bot's role higher in **Server Settings → Roles** (step 6). It can never act on the server owner or on anyone with a higher role. |
+| A box saying `Update available 5.x -> ...` with `npm i prisma@latest` | Ignore it, and **don't** run those commands. It comes from the database tool the bot uses, and upgrading it yourself can break the bot. Current versions of this bot switch the check off. If you still see it, follow [Updating](#updating-to-a-new-version). |
 | Windows: `WSL 2 installation is incomplete` / `WSL needs updating` | Right-click the Start button → **Terminal (Admin)**, run `wsl --update`, then restart your computer. |
 
 **Applying a change to `.env`:** any time you edit `.env`, run `docker compose up -d` in the bot folder so the bot picks it up. Restarting the container from Docker Desktop does **not** re-read `.env`.

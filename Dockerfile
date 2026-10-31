@@ -3,6 +3,11 @@
 FROM node:20-alpine AS base
 # Prisma's query engine needs openssl on alpine
 RUN apk add --no-cache openssl
+# Stops the Prisma CLI's update check / usage ping, which runs on every
+# `prisma generate` and `migrate deploy` (so on every boot). No phone-home
+# by default is a project rule, and its "update available" banner tempts
+# hosts into a breaking major upgrade.
+ENV CHECKPOINT_DISABLE=1
 WORKDIR /app
 
 FROM base AS deps
