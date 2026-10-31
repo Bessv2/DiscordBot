@@ -9,6 +9,11 @@ export function shouldFlagRaid(timestamps: number[], now: number, threshold: num
   return timestamps.filter((t) => t >= now - intervalMs).length >= threshold;
 }
 
+/** At most one mod-log alert per detection window per guild. */
+export function shouldSendRaidAlert(lastAlertAt: number | null, now: number, cooldownMs: number): boolean {
+  return lastAlertAt === null || now - lastAlertAt >= cooldownMs;
+}
+
 export function recordJoinAndCheckRaid(guildId: string, now: number, threshold: number, intervalMs: number): boolean {
   const existing = joinLog.get(guildId) ?? [];
   const pruned = existing.filter((t) => t >= now - intervalMs);

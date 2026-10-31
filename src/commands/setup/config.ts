@@ -8,6 +8,7 @@ import {
 import { Command, SlashCommandData } from '../types';
 import { getOrCreateGuildConfig, prisma } from '../../lib/db';
 import { CommandScope, getConfiguredRoleIds, setPermissionRoles } from '../../lib/permissions';
+import { checkRoleAssignable } from '../../lib/moderationGuard';
 
 // Everything /setup covers can also be tuned later, one setting at a time,
 // without re-running the whole wizard — "config over code" (principle #2).
@@ -215,6 +216,14 @@ export const configCommand: Command = {
       case 'birthday': {
         const channel = interaction.options.getChannel('channel');
         const role = interaction.options.getRole('role');
+        if (role) {
+          // Anyone can set today as their birthday, so this role is effectively self-assignable.
+          const assignable = await checkRoleAssignable(interaction.guild, interaction.member, role);
+          if (!assignable.allowed) {
+            await interaction.reply({ content: assignable.reason!, ephemeral: true });
+            return;
+          }
+        }
         await prisma.guildConfig.update({
           where: { id: guildId },
           data: {

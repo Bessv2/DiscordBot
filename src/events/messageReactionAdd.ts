@@ -9,7 +9,7 @@ export async function messageReactionAdd(
 ): Promise<void> {
   if (user.bot) return;
 
-  await syncStarboard(reaction as MessageReaction).catch((err) => {
+  await syncStarboard(reaction).catch((err) => {
     logger.error(`Starboard sync threw: ${(err as Error).message}`);
   });
   await handleReactionRoleAdd(reaction, user).catch((err) => {

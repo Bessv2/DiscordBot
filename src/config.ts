@@ -17,7 +17,8 @@ const envSchema = z.object({
   DISCORD_TOKEN: z.string().min(1, 'DISCORD_TOKEN is required'),
   DISCORD_CLIENT_ID: z.string().min(1, 'DISCORD_CLIENT_ID is required'),
   DISCORD_GUILD_ID: z.string().optional(),
-  DATABASE_URL: z.string().min(1).default('file:./data/bot.db'),
+  // Relative to prisma/, not the project root — see the note in .env.example.
+  DATABASE_URL: z.string().min(1).default('file:../data/bot.db'),
   ENABLE_MESSAGE_CONTENT: z
     .string()
     .optional()
@@ -64,6 +65,10 @@ function loadConfig(): AppConfig {
     );
     process.exit(1);
   }
+  // Prisma reads process.env.DATABASE_URL itself and never sees zod's
+  // default, so write the resolved value back — otherwise an omitted
+  // DATABASE_URL means the health check and Prisma disagree on the path.
+  process.env.DATABASE_URL = parsed.data.DATABASE_URL;
   return parsed.data;
 }
 

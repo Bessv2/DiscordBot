@@ -65,6 +65,12 @@ export async function handlePrefixCommand(message: Message<true>): Promise<void>
       return;
     }
     case 'cases': {
+      // Same gate as the slash /cases command — case history is moderator-only.
+      const allowed = await memberHasPermission(message.member!, 'moderation', PermissionFlagsBits.ModerateMembers);
+      if (!allowed) {
+        await message.reply("You don't have permission to do that.");
+        return;
+      }
       const who = targetUser ?? message.author;
       const cases = await getCasesForUser(message.guild.id, who.id, 5);
       if (cases.length === 0) {

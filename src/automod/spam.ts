@@ -15,3 +15,22 @@ export function recordMessageAndCheckSpam(key: string, now: number, limit: numbe
   messageLog.set(key, pruned);
   return shouldFlagSpam(pruned, now, limit, intervalMs);
 }
+
+// Keys for members who stopped posting would otherwise stay in the map
+// forever, growing with every member who has ever spoken. The scheduler
+// sweeps anyone whose newest message is older than this. It's far longer
+// than any sane spam window (default 5s), so live tracking is unaffected.
+export const SPAM_LOG_MAX_AGE_MS = 60 * 60_000;
+
+/** Drops tracked users whose newest message is older than maxAgeMs. Returns how many were dropped. */
+export function sweepSpamLog(now: number, maxAgeMs: number = SPAM_LOG_MAX_AGE_MS): number {
+  let dropped = 0;
+  for (const [key, timestamps] of messageLog) {
+    const newest = timestamps[timestamps.length - 1];
+    if (newest === undefined || now - newest > maxAgeMs) {
+      messageLog.delete(key);
+      dropped++;
+    }
+  }
+  return dropped;
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Guild, GuildMember } from 'discord.js';
-import { checkModerationHierarchy } from '../src/lib/moderationGuard';
+import { checkModerationHierarchy, evaluateRoleAssignable } from '../src/lib/moderationGuard';
 
 // Discord.js classes are awkward to instantiate directly, so tests build
 // minimal plain objects shaped like the real thing and cast them — this
@@ -60,5 +60,38 @@ describe('checkModerationHierarchy', () => {
     const invoker = makeMember('mod-1', 50);
     const target = makeMember('user-1', 10);
     expect(checkModerationHierarchy(guild, invoker, target, bot).allowed).toBe(true);
+  });
+});
+
+describe('evaluateRoleAssignable', () => {
+  const base = {
+    isEveryoneRole: false,
+    isManaged: false,
+    rolePosition: 5,
+    invokerIsOwner: false,
+    invokerHighestPosition: 10,
+    botHighestPosition: 20,
+  };
+
+  it('allows a role below both the invoker and the bot', () => {
+    expect(evaluateRoleAssignable(base).allowed).toBe(true);
+  });
+
+  it('blocks a role at or above the invoker\'s highest role (self-escalation)', () => {
+    expect(evaluateRoleAssignable({ ...base, rolePosition: 10 }).allowed).toBe(false);
+    expect(evaluateRoleAssignable({ ...base, rolePosition: 15 }).allowed).toBe(false);
+  });
+
+  it('lets the server owner map any role the bot can manage', () => {
+    expect(evaluateRoleAssignable({ ...base, rolePosition: 15, invokerIsOwner: true }).allowed).toBe(true);
+  });
+
+  it('blocks a role the bot itself cannot assign, even for the owner', () => {
+    expect(evaluateRoleAssignable({ ...base, rolePosition: 20, invokerIsOwner: true }).allowed).toBe(false);
+  });
+
+  it('blocks @everyone and integration-managed roles', () => {
+    expect(evaluateRoleAssignable({ ...base, isEveryoneRole: true }).allowed).toBe(false);
+    expect(evaluateRoleAssignable({ ...base, isManaged: true }).allowed).toBe(false);
   });
 });

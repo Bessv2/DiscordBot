@@ -4,6 +4,7 @@ import { checkDueReminders } from '../reminders/scheduler';
 import { checkExpiredMutes } from '../lib/muteActions';
 import { checkBirthdays } from '../birthdays/jobs';
 import { checkStreamNotifications } from '../streaming/jobs';
+import { sweepSpamLog } from '../automod/spam';
 
 const FAST_INTERVAL_MS = 15_000; // reminders, mute expiry — cheap, time-sensitive
 const SLOW_INTERVAL_MS = 5 * 60_000; // birthdays, stream polling — coarser, rate-limit-conscious
@@ -42,6 +43,7 @@ export function startScheduler(client: Client<true>): void {
 async function runFastTick(client: Client<true>): Promise<void> {
   await checkDueReminders(client);
   await checkExpiredMutes(client);
+  sweepSpamLog(Date.now());
 }
 
 async function runSlowTick(client: Client<true>): Promise<void> {

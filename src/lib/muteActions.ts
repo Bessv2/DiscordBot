@@ -62,7 +62,11 @@ export async function muteMember(
   }
 
   const roleId = await getOrCreateMuteRole(guild);
-  await target.roles.add(roleId, reason ?? undefined);
+  try {
+    await target.roles.add(roleId, reason ?? undefined);
+  } catch (err) {
+    return { ok: false, message: `Discord rejected the mute: ${(err as Error).message}` };
+  }
 
   await prisma.mute.updateMany({ where: { guildId: guild.id, userId: target.id, active: true }, data: { active: false } });
   await prisma.mute.create({
@@ -101,6 +105,7 @@ export async function muteMember(
 }
 
 export async function unmuteMember(guild: Guild, target: GuildMember, moderator: User, reason: string | null): Promise<ActionResult> {
+  if (target.id === moderator.id) return { ok: false, message: "You can't unmute yourself." };
   const guildConfig = await getOrCreateGuildConfig(guild.id);
   if (guildConfig.muteRoleId) {
     await target.roles.remove(guildConfig.muteRoleId, reason ?? 'Unmuted').catch(() => null);
@@ -108,8 +113,7 @@ export async function unmuteMember(guild: Guild, target: GuildMember, moderator:
   await prisma.mute.updateMany({ where: { guildId: guild.id, userId: target.id, active: true }, data: { active: false } });
 
   await postModLog(guild, {
-    type: 'mute' as const,
-    caseNumber: 0,
+    type: 'unmute',
     target: target.user,
     moderator,
     reason: reason ?? 'Unmuted',

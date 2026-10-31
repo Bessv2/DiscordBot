@@ -55,6 +55,11 @@ async function shutdown(signal: string): Promise<void> {
 
 process.on('SIGINT', () => void shutdown('SIGINT'));
 process.on('SIGTERM', () => void shutdown('SIGTERM'));
+// Backstop for any async path not already wrapped (collector callbacks,
+// fire-and-forget sends). Node's default would exit the process.
+process.on('unhandledRejection', (reason) => {
+  logger.error(`Unhandled promise rejection: ${(reason as Error)?.stack ?? reason}`);
+});
 
 main().catch((err) => {
   logger.error(`Fatal startup error: ${(err as Error).stack ?? err}`);

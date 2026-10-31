@@ -29,7 +29,7 @@ export const timeoutCommand: Command = {
     const durationMs = parseDuration(durationInput);
     if (durationMs === null) {
       await interaction.reply({
-        content: 'Could not parse that duration. Try something like `10m`, `1h`, or `1d`.',
+        content: 'Could not parse that duration (max 365d). Try something like `10m`, `1h`, or `1d`.',
         ephemeral: true,
       });
       return;

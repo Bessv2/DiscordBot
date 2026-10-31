@@ -8,9 +8,12 @@ import { logger } from '../lib/logger';
 export async function messageCreate(message: Message): Promise<void> {
   if (message.author.bot || !message.inGuild()) return;
 
-  await runAutomod(message).catch((err) => {
+  const flagged = await runAutomod(message).catch((err) => {
     logger.error(`Automod threw on a message in guild ${message.guild.id}: ${(err as Error).message}`);
+    return false;
   });
+  // A message auto-mod just deleted shouldn't earn XP or run a prefix command.
+  if (flagged) return;
 
   await handleMessageXp(message).catch((err) => {
     logger.error(`XP engine threw on a message in guild ${message.guild.id}: ${(err as Error).message}`);

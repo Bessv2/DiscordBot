@@ -2,6 +2,7 @@ import { ChatInputCommandInteraction, PermissionFlagsBits, SlashCommandBuilder }
 import { Command } from '../types';
 import { prisma, getOrCreateGuildConfig } from '../../lib/db';
 import { config } from '../../config';
+import { checkRoleAssignable } from '../../lib/moderationGuard';
 
 export const activityroleCommand: Command = {
   data: new SlashCommandBuilder()
@@ -40,6 +41,11 @@ export const activityroleCommand: Command = {
 
     if (sub === 'add') {
       const role = interaction.options.getRole('role', true);
+      const assignable = await checkRoleAssignable(interaction.guild, interaction.member, role);
+      if (!assignable.allowed) {
+        await interaction.reply({ content: assignable.reason!, ephemeral: true });
+        return;
+      }
       await getOrCreateGuildConfig(guildId);
       await prisma.voiceActivityRole.upsert({
         where: { guildId_gameNamePattern: { guildId, gameNamePattern: gameName } },

@@ -22,7 +22,7 @@ export const remindCommand: Command = {
     const durationMs = parseDuration(timeInput);
     if (durationMs === null) {
       await interaction.reply({
-        content: 'Could not parse that duration. Try something like `10m`, `1h`, or `2d`.',
+        content: 'Could not parse that duration (max 365d). Try something like `10m`, `1h`, or `2d`.',
         ephemeral: true,
       });
       return;

@@ -2,7 +2,7 @@ import { ChatInputCommandInteraction, PermissionFlagsBits, SlashCommandBuilder }
 import { Command } from '../types';
 import { prisma } from '../../lib/db';
 import { memberHasPermission } from '../../lib/permissions';
-import { addToBalance, canClaimDaily, getOrCreateWallet } from '../../lib/walletActions';
+import { addToBalance, getOrCreateWallet, startOfUtcDay } from '../../lib/walletActions';
 import { calculatePayout, spinSlots } from '../../lib/economy';
 
 export const economyCommand: Command = {
@@ -51,12 +51,18 @@ export const economyCommand: Command = {
 
     if (sub === 'daily') {
       const wallet = await getOrCreateWallet(guildId, interaction.user.id);
-      if (!canClaimDaily(wallet.lastDailyAt)) {
+      const amount = guildConfig!.economyDailyAmount;
+      const now = new Date();
+      // Check-and-claim in one conditional write so two simultaneous /daily
+      // calls can't both see the old lastDailyAt and both pay out.
+      const claimed = await prisma.wallet.updateMany({
+        where: { id: wallet.id, OR: [{ lastDailyAt: null }, { lastDailyAt: { lt: startOfUtcDay(now) } }] },
+        data: { balance: { increment: amount }, lastDailyAt: now },
+      });
+      if (claimed.count === 0) {
         await interaction.reply({ content: "You've already claimed today — come back after 00:00 UTC.", ephemeral: true });
         return;
       }
-      const amount = guildConfig!.economyDailyAmount;
-      await prisma.wallet.update({ where: { id: wallet.id }, data: { balance: { increment: amount }, lastDailyAt: new Date() } });
       await interaction.reply({ content: `Claimed your daily **${amount}** coins!` });
       return;
     }
@@ -68,15 +74,23 @@ export const economyCommand: Command = {
         return;
       }
       const wallet = await getOrCreateWallet(guildId, interaction.user.id);
-      if (wallet.balance < bet) {
-        await interaction.reply({ content: `You only have **${wallet.balance}** coins.`, ephemeral: true });
+      // Take the bet only if the balance covers it, atomically — concurrent
+      // spins can't each pass a stale balance check and drive it negative.
+      const debited = await prisma.wallet.updateMany({
+        where: { id: wallet.id, balance: { gte: bet } },
+        data: { balance: { decrement: bet } },
+      });
+      if (debited.count === 0) {
+        await interaction.reply({ content: `You don't have **${bet}** coins to bet.`, ephemeral: true });
         return;
       }
 
       const spin = spinSlots();
       const payout = calculatePayout(bet, spin.multiplier);
       const net = payout - bet;
-      await prisma.wallet.update({ where: { id: wallet.id }, data: { balance: { increment: net } } });
+      if (payout > 0) {
+        await prisma.wallet.update({ where: { id: wallet.id }, data: { balance: { increment: payout } } });
+      }
 
       const resultLine = spin.reels.join(' | ');
       if (spin.multiplier > 0) {

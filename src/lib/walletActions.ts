@@ -18,9 +18,6 @@ export async function addToBalance(guildId: string, userId: string, amount: numb
   return updated.balance;
 }
 
-/** True if a day (UTC) has passed since the wallet's last daily claim. */
-export function canClaimDaily(lastDailyAt: Date | null): boolean {
-  if (!lastDailyAt) return true;
-  const now = new Date();
-  return now.getUTCFullYear() !== lastDailyAt.getUTCFullYear() || now.getUTCMonth() !== lastDailyAt.getUTCMonth() || now.getUTCDate() !== lastDailyAt.getUTCDate();
+export function startOfUtcDay(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
 }

@@ -1,4 +1,4 @@
-import { Guild, GuildMember } from 'discord.js';
+import { Guild, GuildMember, Role, APIRole } from 'discord.js';
 
 export interface HierarchyCheckResult {
   allowed: boolean;
@@ -42,4 +42,52 @@ export function checkModerationHierarchy(
     };
   }
   return { allowed: true };
+}
+
+export interface RoleAssignInput {
+  isEveryoneRole: boolean;
+  isManaged: boolean;
+  rolePosition: number;
+  invokerIsOwner: boolean;
+  invokerHighestPosition: number;
+  botHighestPosition: number;
+}
+
+/**
+ * Pure check for features that let the bot hand out a role automatically
+ * (reaction roles, XP rewards, activity roles). Mirrors Discord's own rule
+ * that you can only grant roles below your highest one — otherwise anyone
+ * allowed to configure these could map an emoji to Administrator and react.
+ */
+export function evaluateRoleAssignable(input: RoleAssignInput): HierarchyCheckResult {
+  if (input.isEveryoneRole) return { allowed: false, reason: "That's the @everyone role." };
+  if (input.isManaged) return { allowed: false, reason: 'That role is managed by an integration or bot and can’t be assigned.' };
+  if (!input.invokerIsOwner && input.rolePosition >= input.invokerHighestPosition) {
+    return { allowed: false, reason: 'That role is above or equal to your highest role.' };
+  }
+  if (input.rolePosition >= input.botHighestPosition) {
+    return {
+      allowed: false,
+      reason: 'That role is above my highest role — move my role above it in Server Settings → Roles.',
+    };
+  }
+  return { allowed: true };
+}
+
+export async function checkRoleAssignable(
+  guild: Guild,
+  invoker: GuildMember,
+  role: Role | APIRole,
+): Promise<HierarchyCheckResult> {
+  const fullRole = guild.roles.cache.get(role.id) ?? (await guild.roles.fetch(role.id).catch(() => null));
+  if (!fullRole) return { allowed: false, reason: "I can't find that role." };
+  const botMember = await guild.members.fetchMe();
+  return evaluateRoleAssignable({
+    isEveryoneRole: fullRole.id === guild.id,
+    isManaged: fullRole.managed,
+    rolePosition: fullRole.position,
+    invokerIsOwner: invoker.id === guild.ownerId,
+    invokerHighestPosition: invoker.roles.highest.position,
+    botHighestPosition: botMember.roles.highest.position,
+  });
 }

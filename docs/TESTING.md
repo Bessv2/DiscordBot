@@ -1,16 +1,13 @@
 # Test-Driving This Bot
 
-You've been invited to try out this Discord bot before it's published. This walks through getting your own copy running against a test Discord server — nothing here touches the "real" deployment, and nothing you do here can break it for anyone else.
+A self-contained walkthrough for trying this bot out against a throwaway Discord server before running it for real — useful if you're evaluating it, contributing, or just want to see every feature before pointing it at your community. Nothing here touches anyone else's deployment.
 
 ## 1. Get the code
 
 ```bash
 git clone https://github.com/Bessv2/DiscordBot.git
 cd DiscordBot
-git checkout test
 ```
-
-Use the `test` branch, not `main` — `main` is currently just a placeholder; all the code lives on `test` until it's reviewed and merged.
 
 ## 2. Create a Discord bot application
 

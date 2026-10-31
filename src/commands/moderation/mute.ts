@@ -29,7 +29,7 @@ export const muteCommand: Command = {
       durationMs = parseDuration(durationInput);
       if (durationMs === null) {
         await interaction.reply({
-          content: 'Could not parse that duration. Try something like `10m`, `1h`, or `7d`.',
+          content: 'Could not parse that duration (max 365d). Try something like `10m`, `1h`, or `7d`.',
           ephemeral: true,
         });
         return;

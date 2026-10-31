@@ -89,6 +89,7 @@ export async function resolveAppeal(
   const appeal = await prisma.appeal.findUnique({ where: { id: appealId }, include: { case: true } });
   if (!appeal) return { ok: false, reply: 'That appeal no longer exists.' };
   if (appeal.status !== 'pending') return { ok: false, reply: `This appeal was already ${appeal.status}.` };
+  if (appeal.userId === staff.id) return { ok: false, reply: "You can't resolve your own appeal." };
 
   await prisma.appeal.update({
     where: { id: appealId },

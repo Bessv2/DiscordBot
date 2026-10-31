@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clampToDiscordTimeoutLimit, parseDuration } from '../src/lib/duration';
+import { clampToDiscordTimeoutLimit, MAX_DURATION_MS, parseDuration } from '../src/lib/duration';
 
 describe('parseDuration', () => {
   it('parses single units', () => {
@@ -37,5 +37,16 @@ describe('clampToDiscordTimeoutLimit', () => {
   it('clamps durations over the 28-day cap', () => {
     const overLimit = 30 * 86_400_000;
     expect(clampToDiscordTimeoutLimit(overLimit)).toBe(28 * 86_400_000);
+  });
+});
+
+describe('parseDuration upper bound', () => {
+  it('accepts exactly the maximum', () => {
+    expect(parseDuration('365d')).toBe(MAX_DURATION_MS);
+  });
+
+  it('rejects anything over it, so huge input can never become an Invalid Date', () => {
+    expect(parseDuration('366d')).toBeNull();
+    expect(parseDuration('99999999d')).toBeNull();
   });
 });

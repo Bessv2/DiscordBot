@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { shouldFlagSpam } from '../src/automod/spam';
+import { recordMessageAndCheckSpam, shouldFlagSpam, sweepSpamLog } from '../src/automod/spam';
 import { containsInviteLink } from '../src/automod/invite';
 import { findBannedWord } from '../src/automod/wordFilter';
 import { isMentionSpam } from '../src/automod/mentionSpam';
@@ -59,5 +59,22 @@ describe('isMentionSpam', () => {
   it('flags when mention count meets the limit', () => {
     expect(isMentionSpam(5, 5)).toBe(true);
     expect(isMentionSpam(4, 5)).toBe(false);
+  });
+});
+
+describe('sweepSpamLog', () => {
+  it('drops members who have gone quiet and keeps active ones', () => {
+    const now = 10_000_000;
+    recordMessageAndCheckSpam('sweep-test:quiet', now - 2 * 60 * 60_000, 5, 5000);
+    recordMessageAndCheckSpam('sweep-test:active', now - 1000, 5, 5000);
+
+    expect(sweepSpamLog(now, 60 * 60_000)).toBe(1);
+
+    // The active member's earlier message must still count: 4 more in the
+    // same 5s window makes 5, which trips the limit. Had the sweep wrongly
+    // dropped them, this would only be 4.
+    let flagged = false;
+    for (let i = 0; i < 4; i++) flagged = recordMessageAndCheckSpam('sweep-test:active', now, 5, 5000);
+    expect(flagged).toBe(true);
   });
 });

@@ -39,6 +39,11 @@ if (config.ENABLE_PRESENCE) {
 export const client = new Client({
   intents,
   partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.User],
+  // Lots of member-written text gets echoed by the bot (tags, reminders,
+  // quotes, polls, welcome templates, imported trivia). Only ever resolve
+  // plain user mentions by default, so nobody can make the bot ping
+  // @everyone/@here or a role on their behalf.
+  allowedMentions: { parse: ['users'], repliedUser: true },
 }) as Client & { commands: Collection<string, Command> };
 
 client.commands = new Collection<string, Command>();

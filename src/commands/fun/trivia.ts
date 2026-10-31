@@ -25,6 +25,8 @@ interface TriviaQuestion {
 
 const ROUND_TIME_MS = 20_000;
 const CORRECT_ANSWER_REWARD = 10;
+const MAX_IMPORT_BYTES = 1024 * 1024;
+const MAX_IMPORT_QUESTIONS = 500;
 
 // One trivia session per channel at a time — keyed so /trivia stop can
 // find and end it. Purely in-memory: a session is live state, not data
@@ -42,7 +44,7 @@ export const triviaCommand: Command = {
     .addSubcommand((sc) =>
       sc
         .setName('import')
-        .setDescription('(Admin) Import custom questions from a JSON file')
+        .setDescription('(Admin) Import custom questions from a JSON file (2-4 choices each)')
         .addAttachmentOption((o) => o.setName('file').setDescription('JSON array of {question, choices, correctIndex}').setRequired(true)),
     )
     .setDMPermission(false),
@@ -70,8 +72,16 @@ export const triviaCommand: Command = {
         return;
       }
       const attachment = interaction.options.getAttachment('file', true);
+      if (attachment.size > MAX_IMPORT_BYTES) {
+        await interaction.reply({ content: 'That file is too large — keep imports under 1 MB.', ephemeral: true });
+        return;
+      }
       await interaction.deferReply({ ephemeral: true });
       const parsed = await fetchAndParseQuestions(attachment.url);
+      if (parsed && parsed.length > MAX_IMPORT_QUESTIONS) {
+        await interaction.editReply(`That's ${parsed.length} questions — import at most ${MAX_IMPORT_QUESTIONS} at a time.`);
+        return;
+      }
       if (!parsed) {
         await interaction.editReply('Could not parse that file — expected a JSON array of {question, choices, correctIndex}.');
         return;
@@ -115,11 +125,14 @@ export const triviaCommand: Command = {
     let stopped = false;
     activeSessions.set(interaction.channelId, { stop: () => { stopped = true; } });
 
-    for (let round = 0; round < rounds && !stopped; round++) {
-      await runRound(channel, guildId, pool, round, rounds, scores, guildConfig?.economyEnabled ?? false, () => stopped);
+    try {
+      for (let round = 0; round < rounds && !stopped; round++) {
+        await runRound(channel, guildId, pool, round, rounds, scores, guildConfig?.economyEnabled ?? false, () => stopped);
+      }
+    } finally {
+      // Even if a round throws, never leave the channel locked until restart.
+      activeSessions.delete(interaction.channelId);
     }
-
-    activeSessions.delete(interaction.channelId);
 
     if (scores.size > 0) {
       const ranked = [...scores.entries()].sort((a, b) => b[1] - a[1]);
@@ -203,8 +216,13 @@ async function fetchAndParseQuestions(url: string): Promise<TriviaQuestion[] | n
         q !== null &&
         typeof (q as TriviaQuestion).question === 'string' &&
         Array.isArray((q as TriviaQuestion).choices) &&
+        // Only four answer buttons are shown, so a fifth choice could never be picked.
         (q as TriviaQuestion).choices.length >= 2 &&
-        typeof (q as TriviaQuestion).correctIndex === 'number',
+        (q as TriviaQuestion).choices.length <= 4 &&
+        (q as TriviaQuestion).choices.every((c) => typeof c === 'string' && c.length > 0) &&
+        Number.isInteger((q as TriviaQuestion).correctIndex) &&
+        (q as TriviaQuestion).correctIndex >= 0 &&
+        (q as TriviaQuestion).correctIndex < (q as TriviaQuestion).choices.length,
     );
     return valid ? (data as TriviaQuestion[]) : null;
   } catch {

@@ -1,6 +1,7 @@
 import { ChannelType, ChatInputCommandInteraction, PermissionFlagsBits, SlashCommandBuilder } from 'discord.js';
 import { Command } from '../types';
 import { prisma, getOrCreateGuildConfig } from '../../lib/db';
+import { checkRoleAssignable } from '../../lib/moderationGuard';
 
 const CUSTOM_EMOJI_PATTERN = /^<a?:\w+:(\d+)>$/;
 
@@ -59,6 +60,12 @@ export const reactionroleCommand: Command = {
       const role = interaction.options.getRole('role', true);
       const emoji = resolveEmojiKey(emojiInput);
 
+      const assignable = await checkRoleAssignable(interaction.guild, interaction.member, role);
+      if (!assignable.allowed) {
+        await interaction.reply({ content: assignable.reason!, ephemeral: true });
+        return;
+      }
+
       const fetchedChannel = await interaction.guild.channels.fetch(channel.id).catch(() => null);
       if (!fetchedChannel?.isTextBased()) {
         await interaction.reply({ content: "That channel isn't text-based.", ephemeral: true });
@@ -70,9 +77,14 @@ export const reactionroleCommand: Command = {
         return;
       }
 
-      await message.react(emojiInput).catch(async () => {
+      const reacted = await message
+        .react(emojiInput)
+        .then(() => true)
+        .catch(() => false);
+      if (!reacted) {
         await interaction.reply({ content: "Could not react with that emoji — check it's valid and I can use it.", ephemeral: true });
-      });
+        return;
+      }
 
       await getOrCreateGuildConfig(guildId);
       await prisma.reactionRole.upsert({

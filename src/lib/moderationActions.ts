@@ -1,4 +1,5 @@
-import { Guild, GuildMember, User } from 'discord.js';
+import { Guild, GuildMember, Message, User } from 'discord.js';
+import { prisma } from './db';
 import { checkModerationHierarchy } from './moderationGuard';
 import { createCase } from './caseManager';
 import { postModLog } from './modlog';
@@ -15,6 +16,15 @@ export interface ActionResult {
 
 async function resolveBotMember(guild: Guild): Promise<GuildMember> {
   return guild.members.fetchMe();
+}
+
+// Kick/ban have to DM *before* the action — once someone is removed the bot
+// usually shares no server with them and the DM fails. So if Discord then
+// rejects the action, undo both: no phantom case, no "you were banned" DM
+// with a live appeal link for a ban that never happened.
+async function rollbackCase(caseId: number, dm: Message | null): Promise<void> {
+  await prisma.case.delete({ where: { id: caseId } }).catch(() => undefined);
+  await dm?.delete().catch(() => undefined);
 }
 
 export async function warnMember(
@@ -79,13 +89,19 @@ export async function kickMember(
     reason,
   });
 
-  await target
+  const dm = await target
     .send({
       content: `You were kicked from **${guild.name}**${reason ? `: ${reason}` : '.'}`,
       components: [buildAppealButtonRow(record.id)],
     })
     .catch(() => null);
-  await target.kick(reason ?? undefined);
+
+  try {
+    await target.kick(reason ?? undefined);
+  } catch (err) {
+    await rollbackCase(record.id, dm);
+    return { ok: false, message: `Discord rejected the kick: ${(err as Error).message}` };
+  }
 
   await postModLog(guild, { type: 'kick', caseNumber: record.caseNumber, target: target.user, moderator, reason });
 
@@ -123,7 +139,7 @@ export async function banMember(
     reason,
   });
 
-  await targetUser
+  const dm = await targetUser
     .send({
       content: `You were banned from **${guild.name}**${reason ? `: ${reason}` : '.'}`,
       components: [buildAppealButtonRow(record.id)],
@@ -133,6 +149,7 @@ export async function banMember(
   try {
     await guild.members.ban(targetUser.id, { reason: reason ?? undefined, deleteMessageSeconds });
   } catch (err) {
+    await rollbackCase(record.id, dm);
     return { ok: false, message: `Discord rejected the ban: ${(err as Error).message}` };
   }
 
@@ -156,6 +173,13 @@ export async function timeoutMember(
     return { ok: false, message: "I don't have permission to time out that member." };
   }
 
+  // The member stays in the server, so the DM can safely come after — do the action first.
+  try {
+    await target.timeout(durationMs, reason ?? undefined);
+  } catch (err) {
+    return { ok: false, message: `Discord rejected the timeout: ${(err as Error).message}` };
+  }
+
   const record = await createCase({
     guildId: guild.id,
     type: 'timeout',
@@ -167,7 +191,6 @@ export async function timeoutMember(
     durationMs,
   });
 
-  await target.timeout(durationMs, reason ?? undefined);
   await target
     .send({
       content: `You were timed out in **${guild.name}**${reason ? `: ${reason}` : '.'}`,

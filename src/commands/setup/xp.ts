@@ -1,6 +1,7 @@
 import { ChatInputCommandInteraction, PermissionFlagsBits, SlashCommandBuilder } from 'discord.js';
 import { Command } from '../types';
-import { prisma } from '../../lib/db';
+import { prisma, getOrCreateGuildConfig } from '../../lib/db';
+import { checkRoleAssignable } from '../../lib/moderationGuard';
 
 export const xpCommand: Command = {
   data: new SlashCommandBuilder()
@@ -11,9 +12,9 @@ export const xpCommand: Command = {
         .setName('set')
         .setDescription('Turn leveling on/off and tune XP rate')
         .addBooleanOption((o) => o.setName('enabled').setDescription('Enable leveling?').setRequired(true))
-        .addIntegerOption((o) => o.setName('min_per_message').setDescription('Minimum XP per message').setRequired(false))
-        .addIntegerOption((o) => o.setName('max_per_message').setDescription('Maximum XP per message').setRequired(false))
-        .addIntegerOption((o) => o.setName('cooldown_seconds').setDescription('Seconds between XP-earning messages').setRequired(false)),
+        .addIntegerOption((o) => o.setName('min_per_message').setDescription('Minimum XP per message').setMinValue(0).setMaxValue(1000).setRequired(false))
+        .addIntegerOption((o) => o.setName('max_per_message').setDescription('Maximum XP per message').setMinValue(0).setMaxValue(1000).setRequired(false))
+        .addIntegerOption((o) => o.setName('cooldown_seconds').setDescription('Seconds between XP-earning messages').setMinValue(0).setRequired(false)),
     )
     .addSubcommand((sc) =>
       sc
@@ -22,7 +23,7 @@ export const xpCommand: Command = {
         .addStringOption((o) =>
           o.setName('action').setDescription('add or remove').setRequired(true).addChoices({ name: 'add', value: 'add' }, { name: 'remove', value: 'remove' }),
         )
-        .addIntegerOption((o) => o.setName('level').setDescription('Level this reward triggers at').setRequired(true))
+        .addIntegerOption((o) => o.setName('level').setDescription('Level this reward triggers at').setMinValue(1).setRequired(true))
         .addRoleOption((o) => o.setName('role').setDescription('Role to grant (required for action=add)').setRequired(false)),
     )
     .setDMPermission(false),
@@ -32,6 +33,7 @@ export const xpCommand: Command = {
     if (!interaction.inCachedGuild()) return;
     const guildId = interaction.guild.id;
     const sub = interaction.options.getSubcommand();
+    await getOrCreateGuildConfig(guildId);
 
     if (sub === 'set') {
       const enabled = interaction.options.getBoolean('enabled', true);
@@ -60,6 +62,11 @@ export const xpCommand: Command = {
         const role = interaction.options.getRole('role');
         if (!role) {
           await interaction.reply({ content: 'Specify a role to add a reward.', ephemeral: true });
+          return;
+        }
+        const assignable = await checkRoleAssignable(interaction.guild, interaction.member, role);
+        if (!assignable.allowed) {
+          await interaction.reply({ content: assignable.reason!, ephemeral: true });
           return;
         }
         await prisma.levelRoleReward.upsert({

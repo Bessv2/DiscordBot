@@ -1,4 +1,4 @@
-import { EmbedBuilder, MessageReaction } from 'discord.js';
+import { EmbedBuilder, MessageReaction, PartialMessageReaction } from 'discord.js';
 import { prisma } from './db';
 import { config } from '../config';
 import { logger } from './logger';
@@ -10,7 +10,12 @@ import { logger } from './logger';
  * un-posted if the count later drops, matching how most starboard bots
  * behave (it's an archive, not a live leaderboard).
  */
-export async function syncStarboard(reaction: MessageReaction): Promise<void> {
+export async function syncStarboard(partialReaction: MessageReaction | PartialMessageReaction): Promise<void> {
+  // Reactions on messages from before the bot's last restart arrive as
+  // partials with a null count — fetch them, or older messages could never
+  // reach the threshold.
+  const reaction = partialReaction.partial ? await partialReaction.fetch().catch(() => null) : partialReaction;
+  if (!reaction) return;
   const message = reaction.message.partial ? await reaction.message.fetch().catch(() => null) : reaction.message;
   if (!message || !message.guild) return;
 
