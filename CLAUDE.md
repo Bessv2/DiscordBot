@@ -67,29 +67,29 @@ Non-negotiables:
 
 ### Near-term (v1.x)
 
-- [ ] Anti-raid mode: join-rate throttling, auto-lockdown trigger
-- [ ] Mute/timeout scheduling with auto-expiry
-- [ ] Appeal/DM-based mod-log acknowledgment flow
-- [ ] Per-channel auto-mod rule overrides
+- [x] Anti-raid mode: join-rate throttling, auto-lockdown trigger
+- [x] Mute/timeout scheduling with auto-expiry
+- [x] Appeal/DM-based mod-log acknowledgment flow
+- [x] Per-channel auto-mod rule overrides
 
 ### Fun, Creative & Game Integration (opt-in modules)
 
-- [ ] Custom tag/command system — hosts define their own text/embed responses without touching code
-- [ ] Leveling/XP system with configurable role rewards for activity
-- [ ] Starboard — pin popular messages to a channel via emoji reactions
-- [ ] Welcome/goodbye messages with custom embeds and images
-- [ ] Birthday tracker + announcement
-- [ ] Quote book / "said it here first" archive
-- [ ] Dice roller, RPG stat tools, D&D-style utility commands
-- [ ] Game server status pinger — live player count/uptime for self-hosted game servers (Minecraft, Valheim, ARK, etc.) via query protocols
-- [ ] LFG (looking-for-group) matchmaking — post/join queues for a game session, auto-ping a role when a group forms
-- [ ] Voice-channel "now playing" activity roles — auto-tag members by detected game activity (Discord Rich Presence)
-- [ ] Optional game stats lookups (Steam, Riot, etc.) — API-key-gated, fails gracefully with a clear "not configured" message when no key is set
-- [ ] Simple tournament/bracket tracker for community game nights
-- [ ] Twitch/YouTube live-stream notifications, filterable by game
-- [ ] Economy/bank system — user credits, slot machine, leaderboard
-- [ ] Trivia module with custom/importable question lists
-- [ ] Reaction-role self-assignment (emoji opt-in — distinct from the XP-based role rewards above)
+- [x] Custom tag/command system — hosts define their own text/embed responses without touching code
+- [x] Leveling/XP system with configurable role rewards for activity
+- [x] Starboard — pin popular messages to a channel via emoji reactions
+- [x] Welcome/goodbye messages with custom embeds and images
+- [x] Birthday tracker + announcement
+- [x] Quote book / "said it here first" archive
+- [x] Dice roller, RPG stat tools, D&D-style utility commands
+- [x] Game server status pinger — live player count/uptime for self-hosted game servers (Minecraft, Valheim, ARK, etc.) via query protocols
+- [x] LFG (looking-for-group) matchmaking — post/join queues for a game session, auto-ping a role when a group forms
+- [x] Voice-channel "now playing" activity roles — auto-tag members by detected game activity (Discord Rich Presence)
+- [x] Optional game stats lookups (Steam, Riot, etc.) — API-key-gated, fails gracefully with a clear "not configured" message when no key is set
+- [x] Simple tournament/bracket tracker for community game nights
+- [x] Twitch/YouTube live-stream notifications, filterable by game
+- [x] Economy/bank system — user credits, slot machine, leaderboard
+- [x] Trivia module with custom/importable question lists
+- [x] Reaction-role self-assignment (emoji opt-in — distinct from the XP-based role rewards above)
 
 All of these are plugin-architecture candidates — a host running a pure moderation setup should never load this code or pay its resource cost unless they turn it on.
 

@@ -27,31 +27,54 @@ npm run start
 
 Use [pm2](https://pm2.keymetrics.io/) (`pm2 start dist/index.js --name discord-mod-bot`) to keep it running and restart on crash.
 
+### Deploying on Railway
+
+If you'd rather not manage a VPS, see [`docs/RAILWAY.md`](./docs/RAILWAY.md) — connects this repo to [Railway](https://railway.com) and builds the same `Dockerfile` you'd use locally. (No "Deploy on Railway" button here — that needs a published Railway Template from a live account, which a repo file can't create on its own; the doc explains why and how to get one later if you want it.)
+
 ## Resource baseline
 
-Idle footprint on a single small guild is roughly **60-100MB RAM** and negligible CPU — comfortable on a $5/month VPS or a Raspberry Pi. No Redis, no message queue, and no separate database server required at this scale (SQLite is the default).
+Idle footprint on a single small guild is roughly **60-100MB RAM** and negligible CPU — comfortable on a $5/month VPS or a Raspberry Pi. No Redis, no message queue, and no separate database server required at this scale (SQLite is the default). The optional integrations (`/streamwatch`, birthdays) poll on a 5-minute timer rather than holding connections open, so turning them on doesn't change this baseline meaningfully — the cost scales with how many channels/streamers you watch, not with being enabled at all.
 
-## Features (v1)
+## Features
 
-- Warn / kick / ban / timeout, each logged to a per-guild, sequentially numbered case history (`/cases`)
-- Auto-mod: message-flood detection, invite-link filtering, word/phrase filter, mention-spam limits
+**Core moderation**
+- Warn / kick / ban / timeout / mute, each logged to a per-guild, sequentially numbered case history (`/cases`) — `/mute` is role-based and has no time cap, unlike native `/timeout`'s 28-day limit
+- Auto-mod: message-flood detection, invite-link filtering, word/phrase filter, mention-spam limits, with per-channel exemptions (`/config channel-override`)
+- Anti-raid join-rate detection with optional auto-lockdown (`/lockdown`)
+- Appeal flow: a DM button on every mod action opens a modal, routes to a review channel with Accept/Deny
 - Rich embed mod-log, posted to a channel you choose
 - Role-based permission gates per command scope — on top of, or instead of, Discord's own permission model
 - Slash commands first; legacy `!prefix` commands available as an opt-in
-- Utility: `/userinfo`, `/serverinfo`, `/remind`, `/poll`
-- Guided `/setup` wizard + `/config` for everything else
 
-See [`CLAUDE.md`](./CLAUDE.md) for the full roadmap (anti-raid, leveling, starboard, game integrations, AI-assisted triage, and more — all designed as opt-in modules a pure-moderation host never pays the cost of).
+**Utility**
+- `/userinfo`, `/serverinfo`, `/remind`, `/poll`
+- Guided `/setup` wizard + `/config` for everything above
+
+**Community & fun** (all opt-in, zero cost unless turned on)
+- `/tag` custom commands, `/quote` archive, `/roll` `/coinflip` `/8ball`
+- `/xp` leveling with role rewards, `/rank`, `/leaderboard`
+- `/starboard`, `/reactionrole` self-assignment
+- `/economy` (balance/daily/slots), `/trivia` (with custom question import)
+- `/welcome` / goodbye messages, `/birthday` tracker
+- `/gameserver` status lookup (Minecraft, Valheim, Ark, ~180 others via [gamedig](https://github.com/gamedig/node-gamedig))
+- `/gamestats` (Steam, League of Legends — needs an API key), `/streamwatch` (Twitch/YouTube live alerts — needs API credentials)
+- `/activityrole` (auto-role from Rich Presence), `/lfg` (looking-for-group posts), `/tournament` (bracket tracker)
+
+See [`CLAUDE.md`](./CLAUDE.md) for what's still on the roadmap (plugin architecture, AI-assisted triage, a web dashboard, cross-server features).
 
 ## Privileged intents — what's required vs. optional
 
 | Intent | Required for | Notes |
 | --- | --- | --- |
 | Guilds | Everything | Always on, not privileged |
-| Guild Messages | Flood-based spam detection, prefix commands | Always on, not privileged |
-| **Message Content** (privileged) | Invite-link filter, word filter, mention-spam detection, legacy prefix commands | **Opt-in** via `ENABLE_MESSAGE_CONTENT=true` in `.env`. Everything else — every slash command, warn/kick/ban/timeout, flood detection — works with this off. |
+| Guild Messages | Flood-based spam detection, prefix commands, XP gain | Always on, not privileged |
+| Guild Message Reactions | Starboard, reaction-roles | Always on, not privileged |
+| **Message Content** (privileged) | Invite-link filter, word filter, mention-spam detection, legacy prefix commands, starboard message text | **Opt-in** via `ENABLE_MESSAGE_CONTENT=true` in `.env`. |
+| **Guild Members** (privileged) | Welcome/goodbye messages, anti-raid join tracking, birthday-role cleanup | **Opt-in** via `ENABLE_GUILD_MEMBERS=true` in `.env`. |
+| **Presence** (privileged) | `/activityrole` (reading Rich Presence game activity) | **Opt-in** via `ENABLE_PRESENCE=true` in `.env` — the most invasive one here, off by default. |
 
-The bot checks this at startup and logs a clear warning if a guild has turned on a feature that needs an intent you haven't enabled, instead of silently doing nothing.
+Every slash command, warn/kick/ban/timeout/mute, and flood-based spam detection work with all three privileged intents off. The bot checks this at startup and logs a clear warning if a guild has turned on a feature that needs an intent you haven't enabled, instead of silently doing nothing.
+
 
 ## Configuration
 
