@@ -41,7 +41,6 @@ Open the service → **Variables** and add everything from
 
 ```
 DISCORD_TOKEN=...
-DISCORD_CLIENT_ID=...
 DATABASE_URL=file:../data/bot.db
 ```
 
@@ -50,16 +49,13 @@ why it's `../data/bot.db` and not `./data/bot.db`. Everything else
 (`ENABLE_MESSAGE_CONTENT`, the optional integration keys, etc.) is optional,
 same as any other deployment.
 
-## 4. Deploy, then register commands once
+## 4. Deploy, then invite the bot
 
-Railway deploys automatically on push. After the first successful deploy,
-register the slash commands once (they don't need to be re-run on every
-deploy — only when a command's options change):
-
-1. Service → the running deployment → open a shell (or use `railway run`
-   from the [Railway CLI](https://docs.railway.com/guides/cli) locally,
-   pointed at this service).
-2. `npm run deploy-commands`
+Railway deploys automatically on push. The bot registers its own slash
+commands on startup, so there's no extra step for that. Open the
+deployment's **Deploy Logs** and look for the line
+`The bot isn't in any server yet. Open this link in your browser...` —
+that's your invite link. Then run `/setup` in your server.
 
 ## Upgrading
 

@@ -27,12 +27,6 @@ npm run build
 npm run start   # or: pm2 restart discord-mod-bot
 ```
 
-## If a slash command's options changed
+## Slash commands
 
-Command *definitions* (name, description, options) aren't part of the database — after pulling a version that added/changed a slash command, re-run:
-
-```bash
-npm run deploy-commands
-```
-
-(Docker: `docker compose exec bot npm run deploy-commands`.) This isn't needed for most upgrades — only when a command's options changed, which the release notes will call out.
+Nothing to do. On startup the bot compares its command definitions against what it last registered (a hash stored in `data/.commands-hash`) and re-registers with Discord only when something changed. To force a re-register anyway, delete that file and restart, or run `npm run deploy-commands` (from a source checkout: `npm run deploy-commands:dev`).

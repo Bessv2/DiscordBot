@@ -14,8 +14,12 @@ dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 // sensitive or tunable is allowed to be read directly via process.env
 // elsewhere, so this file is always the full list of what a host can set.
 const envSchema = z.object({
-  DISCORD_TOKEN: z.string().min(1, 'DISCORD_TOKEN is required'),
-  DISCORD_CLIENT_ID: z.string().min(1, 'DISCORD_CLIENT_ID is required'),
+  // trim(): a stray space or newline from copy-pasting is the most common
+  // first-run mistake, and Discord just reports it as an invalid token.
+  DISCORD_TOKEN: z.string().trim().min(1, 'DISCORD_TOKEN is required'),
+  // Optional: the bot learns its own application ID from the token at
+  // login. Kept for anyone who already set it, and for deploy-commands.
+  DISCORD_CLIENT_ID: z.string().optional(),
   DISCORD_GUILD_ID: z.string().optional(),
   // Relative to prisma/, not the project root — see the note in .env.example.
   DATABASE_URL: z.string().min(1).default('file:../data/bot.db'),

@@ -1,13 +1,48 @@
-import { Client } from 'discord.js';
+import { Client, OAuth2Scopes, PermissionFlagsBits } from 'discord.js';
 import { config } from '../config';
 import { logger } from '../lib/logger';
 import { prisma } from '../lib/db';
 import { startScheduler } from '../scheduler';
+import { syncCommandsIfChanged } from '../discord/commandSync';
+
+// What the bot itself needs to carry out every feature. Kept to an explicit
+// list (not Administrator) so a host can see exactly what they're granting.
+const INVITE_PERMISSIONS = [
+  PermissionFlagsBits.ViewChannel,
+  PermissionFlagsBits.SendMessages,
+  PermissionFlagsBits.EmbedLinks,
+  PermissionFlagsBits.ReadMessageHistory,
+  PermissionFlagsBits.AddReactions,
+  PermissionFlagsBits.ManageMessages, // auto-mod deletes, poll/starboard cleanup
+  PermissionFlagsBits.KickMembers,
+  PermissionFlagsBits.BanMembers,
+  PermissionFlagsBits.ModerateMembers, // timeouts
+  PermissionFlagsBits.ManageRoles, // mute role, reaction/XP/birthday/activity roles
+  PermissionFlagsBits.ManageChannels, // lockdown, mute-role channel overrides
+];
 
 export function ready(client: Client<true>): void {
   logger.info(`Logged in as ${client.user.tag} — serving ${client.guilds.cache.size} guild(s).`);
+  logInviteLink(client);
   startScheduler(client);
+  void syncCommandsIfChanged(client);
   void warnIfContentFiltersDisabled();
+}
+
+// Saves a first-time host from hunting through the Developer Portal's URL
+// generator: the link they need is right there in the logs.
+function logInviteLink(client: Client<true>): void {
+  const url = client.generateInvite({
+    scopes: [OAuth2Scopes.Bot, OAuth2Scopes.ApplicationsCommands],
+    permissions: INVITE_PERMISSIONS,
+  });
+  if (client.guilds.cache.size === 0) {
+    logger.info(
+      `The bot isn't in any server yet. Open this link in your browser to add it to one:\n    ${url}`,
+    );
+  } else {
+    logger.info(`Invite link (to add the bot to another server): ${url}`);
+  }
 }
 
 async function warnIfContentFiltersDisabled(): Promise<void> {

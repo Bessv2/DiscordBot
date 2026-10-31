@@ -21,7 +21,9 @@ COPY prisma ./prisma
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
-RUN chmod +x ./docker-entrypoint.sh && mkdir -p /app/data
+# Strip CRLF in case the repo was checked out on Windows without
+# .gitattributes applying (e.g. an older clone) — CRLF breaks the shebang.
+RUN sed -i 's/\r$//' ./docker-entrypoint.sh && chmod +x ./docker-entrypoint.sh && mkdir -p /app/data
 
 VOLUME ["/app/data"]
 

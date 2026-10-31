@@ -1,0 +1,4 @@
+# Shell scripts run inside the Linux container. A Windows checkout with
+# CRLF line endings breaks the shebang ("no such file or directory"), so
+# force LF no matter what the host's git is configured to do.
+*.sh text eol=lf

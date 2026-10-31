@@ -24,12 +24,18 @@ function handleLoginError(err: Error): void {
   const message = err.message ?? String(err);
 
   if (message.includes('disallowed intents') || message.includes('Used disallowed intents')) {
+    // Name exactly which switches the host turned on, so they know which
+    // toggles to look for in the portal.
+    const wanted = [
+      config.ENABLE_MESSAGE_CONTENT && '"Message Content Intent" (ENABLE_MESSAGE_CONTENT)',
+      config.ENABLE_GUILD_MEMBERS && '"Server Members Intent" (ENABLE_GUILD_MEMBERS)',
+      config.ENABLE_PRESENCE && '"Presence Intent" (ENABLE_PRESENCE)',
+    ].filter(Boolean);
     logger.error(
       `Discord rejected the connection: ${message}`,
-      'You have ENABLE_MESSAGE_CONTENT=true in .env but haven\'t enabled it for your bot yet. ' +
-        'Go to the Discord Developer Portal → your application → Bot → Privileged Gateway Intents, ' +
-        'turn on "Message Content Intent", and restart. Or set ENABLE_MESSAGE_CONTENT=false if you ' +
-        "don't need the invite/word filters or mention-spam detection.",
+      `.env turns on ${wanted.join(', ')}, but the matching switch isn't on for your bot yet. ` +
+        'Go to https://discord.com/developers/applications → your application → Bot → Privileged Gateway Intents, ' +
+        'turn those on and click Save Changes, then restart. Or set the matching ENABLE_... line in .env back to false.',
     );
     return;
   }
@@ -38,7 +44,8 @@ function handleLoginError(err: Error): void {
     logger.error(
       `Discord rejected the bot token: ${message}`,
       'Double check DISCORD_TOKEN in .env against the Bot tab at https://discord.com/developers/applications ' +
-        '— it may have been regenerated since you copied it.',
+        '(Bot → Reset Token). It must be the bot token from the Bot tab, not the "Client Secret" from the OAuth2 tab, ' +
+        'and it may have been regenerated since you copied it.',
     );
     return;
   }

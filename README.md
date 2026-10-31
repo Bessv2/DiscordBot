@@ -2,26 +2,191 @@
 
 A self-hostable Discord moderation and utility bot. No third-party dashboard, no subscription, no cloud account holding your server's data — you run it, you own the database. See [`CLAUDE.md`](./CLAUDE.md) for the full project guidelines this bot is built against.
 
-## Quickstart
+**Never set up a bot before?** Follow [Setup, step by step](#setup-step-by-step) below. It assumes no technical background. You only copy and paste, there's no coding, and it takes about 20 minutes. Already comfortable with Docker? Skip to the [short version](#short-version-for-docker-users).
 
-1. Create an application at the [Discord Developer Portal](https://discord.com/developers/applications) → **Bot** tab → copy the token, and note the **Application ID** from the **General Information** tab.
-2. (Optional) If you want the invite-link filter, word filter, or mention-spam detection, enable **Message Content Intent** on the same Bot tab under *Privileged Gateway Intents*.
-3. Invite the bot to your server using the OAuth2 URL Generator: scopes `bot` + `applications.commands`; permissions at minimum `Kick Members`, `Ban Members`, `Moderate Members`, `Manage Messages`, `View Channels`, `Send Messages`, `Embed Links`.
-4. Clone this repo and `cd` into it.
-5. `cp .env.example .env` and fill in `DISCORD_TOKEN` and `DISCORD_CLIENT_ID`.
-6. `docker compose up -d`
-7. `docker compose exec bot npm run deploy-commands` (registers the slash commands with Discord — only needed once, and again after an upgrade that changes a command's options).
-8. In your server, run `/setup` and follow the prompts.
+## Setup, step by step
 
-That's it — every other setting (mod-log channel, auto-mod thresholds, permission roles) is configured inside Discord via `/setup` and `/config`, not by editing files.
+**What you need:**
+- A computer running Windows 10/11, macOS, or Linux. The bot only runs while this computer is on, so see [Keeping it running](#keeping-it-running) if you want it online 24/7.
+- A Discord account with **Manage Server** permission on the server you want to add the bot to. Owning the server is enough.
+- About 2 GB of free disk space.
+
+You'll install one free program (Docker Desktop), download the bot, give it a password-like "token" from Discord, and start it. Every bot setting after that is changed inside Discord itself.
+
+### Step 1 — Install Docker Desktop
+
+Docker is the free program that runs the bot for you, so you don't have to install anything else.
+
+1. Go to <https://www.docker.com/products/docker-desktop/> and download Docker Desktop for your system.
+   - **Mac:** pick **Apple Silicon** if your Mac has an M1/M2/M3/M4 chip, or **Intel** otherwise. Not sure? Click the Apple menu → **About This Mac** and look at **Chip**.
+   - **Linux / Raspberry Pi:** you don't need Docker Desktop. In a terminal, run `curl -fsSL https://get.docker.com | sh`, then `sudo usermod -aG docker $USER`, then log out and back in.
+2. Run the installer and accept the defaults.
+   - **Windows:** if it asks about **WSL 2**, leave it ticked. Restart your computer if it asks you to.
+3. Open **Docker Desktop**. Accept the terms. You can click **Skip** or **Continue without signing in**, because you don't need a Docker account.
+4. Wait until the bottom-left corner of Docker Desktop says **Engine running**. Leave Docker Desktop open in the background.
+
+### Step 2 — Download the bot
+
+1. At the top of this page, click the green **Code** button, then **Download ZIP**.
+2. Unzip it:
+   - **Windows:** right-click the downloaded file → **Extract All** → **Extract**.
+   - **Mac:** double-click the downloaded file.
+3. Move the unzipped folder somewhere easy to find, such as your Documents folder. The bot keeps its database in this folder, so don't delete it later.
+
+Open the folder. You should see files named `docker-compose.yml`, `Dockerfile` and `.env.example`. If you only see one folder inside, open it: that inner folder is "the bot folder" for the rest of this guide.
+
+> Know git? `git clone https://github.com/Bessv2/DiscordBot.git` works too, and makes updating easier.
+
+### Step 3 — Create your bot on Discord and copy its token
+
+1. Go to <https://discord.com/developers/applications> and log in with your Discord account.
+2. Click **New Application** (top right). Give it a name, for example "Mod Bot". Tick the box to agree, then click **Create**.
+3. Optional: on this first page you can upload an icon. It becomes the bot's profile picture.
+4. In the left menu, click **Bot**.
+5. Click **Reset Token**, then **Yes, do it!** Discord may ask for your password or a 2-factor code. Click **Copy** next to the long code that appears.
+
+That code is your **bot token**. Keep this browser tab open, because you'll paste the token in the next step. **Treat it like a password.** Anyone who has it can control your bot. Discord only shows it once, but if you lose it you can click **Reset Token** again and use the new one.
+
+> **Optional extra features.** Further down the same **Bot** page, under **Privileged Gateway Intents**, there are three switches. You don't need any of them for moderation commands to work. Each one unlocks a few features:
+>
+> | Switch on Discord | Turns on | Line to change in `.env` (step 4) |
+> | --- | --- | --- |
+> | **Message Content Intent** | Invite-link filter, banned-word filter, mention-spam detection, `!` commands | `ENABLE_MESSAGE_CONTENT=true` |
+> | **Server Members Intent** | Welcome/goodbye messages, anti-raid join detection | `ENABLE_GUILD_MEMBERS=true` |
+> | **Presence Intent** | `/activityrole` (roles based on the game someone is playing) | `ENABLE_PRESENCE=true` |
+>
+> You need to do **both**: flip the switch here and click **Save Changes**, *and* change the matching line in `.env`. If you change `.env` but forget the switch, the bot won't start, and its log will tell you which switch is missing.
+
+### Step 4 — Give the bot its token
+
+The bot reads its settings from a file called `.env` in the bot folder. You make it by copying the example file.
+
+**First, open a terminal in the bot folder.** A terminal is a window where you type commands. You'll only paste a few.
+
+- **Windows:** open the bot folder in File Explorer. Click the address bar at the top, so the folder path turns blue, type `powershell`, and press **Enter**. A blue or black window opens, already pointed at the bot folder.
+- **Mac:** open the **Terminal** app (press Cmd+Space and type "Terminal"). Type `cd` followed by a space. Don't press Enter yet. Drag the bot folder from Finder into the Terminal window, then press **Enter**.
+- **Linux:** right-click inside the folder → **Open in Terminal**.
+
+**Then create `.env` and open it.** Paste the line for your system into the terminal, then press **Enter**:
+
+| System | Paste this |
+| --- | --- |
+| Windows | `copy .env.example .env; notepad .env` |
+| Mac | `cp .env.example .env && open -e .env` |
+| Linux | `cp .env.example .env && nano .env` |
+
+A text editor opens with the new `.env` file. Find this line near the top:
+
+```
+DISCORD_TOKEN=
+```
+
+Paste your token straight after the `=`, with no spaces and no quotes, so it looks like `DISCORD_TOKEN=MTI3NDk...`. That's the only line you have to fill in, because everything else already has a working default. If you switched on any optional features in step 3, change their lines from `false` to `true` too.
+
+Save the file and close the editor. In Notepad or TextEdit, use **File → Save**. In nano, press Ctrl+O, Enter, then Ctrl+X.
+
+> Edit the file named **`.env`**, not `.env.example`. The bot never reads `.env.example`, because it's only a template.
+
+### Step 5 — Start the bot
+
+In the same terminal window, paste this and press **Enter**:
+
+```
+docker compose up -d --build
+```
+
+The first time, this takes a few minutes while Docker downloads and builds everything. That's normal. When you get your prompt back and it says the container is **Started**, the bot is running in the background. You can close the terminal now and the bot keeps running.
+
+### Step 6 — Add the bot to your server
+
+The bot writes your personal invite link in its log the first time it starts.
+
+1. In Docker Desktop, click **Containers** in the left menu, then click **discord-mod-bot**. The **Logs** tab opens.
+   - In a terminal, you can see the same thing with `docker compose logs bot`.
+2. Look for the line:
+   ```
+   The bot isn't in any server yet. Open this link in your browser to add it to one:
+       https://discord.com/api/oauth2/authorize?client_id=...
+   ```
+   You should also see `Logged in as YourBot#1234` and `Registered 34 slash commands globally`.
+3. Copy that link into your browser. Pick your server, click **Continue**, and then click **Authorize**. Leave the permissions ticked: they're the ones the bot needs.
+
+**One more click that's easy to miss:** in Discord, open **Server Settings → Roles** and drag the bot's role (it has the bot's name) **above** the roles of the members it should be able to moderate. Discord only lets a bot kick, ban, time out or give roles to members whose highest role is *below* its own.
+
+> Red text in the log instead? Each error comes with a line starting `-> Fix:` that says what to do. Check [Troubleshooting](#troubleshooting) below too.
+
+### Step 7 — Set it up inside Discord
+
+In any channel on your server, type `/setup` and pick it from the menu that pops up. The wizard walks you through:
+- which channel moderation logs go to
+- whether to turn on auto-moderation, and how strict it should be
+- which roles can use moderation and admin commands
+- which optional modules (levels, starboard, economy, and more) to turn on
+
+`/setup` not showing up yet? The first time, Discord can take a few minutes to show a new bot's commands. Wait a few minutes, then restart Discord or press Ctrl+R (Cmd+R on Mac).
+
+### Step 8 — You're done
+
+Try `/warn`, `/timeout`, `/cases`, `/userinfo`, `/poll` or `/remind`. Type `/` in Discord to see every command. Change any setting later with `/config`, without touching any files.
+
+## Keeping it running
+
+- **The bot runs only while your computer is on and Docker Desktop is running.** Docker restarts the bot by itself if it crashes, and starts it again whenever Docker Desktop starts.
+- **To have it come back after a reboot:** open Docker Desktop → **Settings** (gear icon) → **General** → tick **Start Docker Desktop when you sign in to your computer**.
+- **To stop the bot:** click the ■ stop button next to **discord-mod-bot** in Docker Desktop. Click ▶ to start it again.
+- **For 24/7 uptime** without leaving a PC on: run the same steps on a Raspberry Pi or a cheap ($5/month) Linux VPS, or use [Railway](./docs/RAILWAY.md), which doesn't need a computer at all.
+
+Your data (settings, case history, levels, and so on) lives in the `data` folder inside the bot folder. **To back it up, stop the bot and copy that `data` folder somewhere safe.** See [`docs/BACKUP.md`](./docs/BACKUP.md) for an automatic option.
+
+## Updating to a new version
+
+1. Back up the `data` folder (see above).
+2. Get the new version:
+   - **ZIP download:** download and unzip the new ZIP as in step 2. Copy your **`.env`** file and your **`data`** folder from the old bot folder into the new one. Then delete the old folder, or stop the old bot first so two copies don't run at once.
+   - **git:** in the bot folder, run `git pull`.
+3. Open a terminal in the (new) bot folder and run `docker compose up -d --build` again.
+
+Database changes are applied automatically, and slash commands update by themselves. See [`docs/UPGRADING.md`](./docs/UPGRADING.md) for the details.
+
+## Troubleshooting
+
+| What you see | What to do |
+| --- | --- |
+| `docker` is not recognized / `command not found` | Docker Desktop isn't installed, or the terminal was opened before you installed it. Close the terminal, make sure Docker Desktop is open, and open a new terminal. |
+| `Cannot connect to the Docker daemon`, or `error during connect` | Docker Desktop isn't running. Open it and wait for **Engine running**, then try again. |
+| `env file ... .env not found` | You haven't made `.env` yet, or it isn't in the bot folder. Redo step 4. On Windows, make sure Notepad didn't save it as `.env.txt`. |
+| `no configuration file provided: not found` | The terminal isn't in the bot folder. Open the terminal from the folder that contains `docker-compose.yml` (step 4). |
+| Log says `DISCORD_TOKEN: DISCORD_TOKEN is required` | The token line in `.env` is empty or wasn't saved. Paste the token again and save. Then run `docker compose up -d` to restart. |
+| Log says `Discord rejected the bot token` | The token is wrong or was reset. Copy a fresh one from the **Bot** tab (**Reset Token**), not the "Client Secret" on the OAuth2 tab. Put it in `.env`, then run `docker compose up -d`. |
+| Log says `disallowed intents` | You set an `ENABLE_...=true` line in `.env` but didn't flip the matching switch on Discord (see the table in step 3). Flip it and click **Save Changes**, or set the line back to `false`. Then run `docker compose up -d`. |
+| No invite link in the log | It's only printed while the bot isn't in a server yet. Once it's in one, the log shows `Invite link (to add the bot to another server)`. |
+| Slash commands don't show up | Wait a few minutes and restart Discord. Check the log says `Registered ... slash commands`. Make sure you invited the bot with the link from its log. |
+| The bot says it can't kick/ban/time out someone, or `Missing Permissions` | Drag the bot's role higher in **Server Settings → Roles** (step 6). It can never act on the server owner or on anyone with a higher role. |
+| Windows: `WSL 2 installation is incomplete` / `WSL needs updating` | Right-click the Start button → **Terminal (Admin)**, run `wsl --update`, then restart your computer. |
+
+**Applying a change to `.env`:** any time you edit `.env`, run `docker compose up -d` in the bot folder so the bot picks it up. Restarting the container from Docker Desktop does **not** re-read `.env`.
+
+Still stuck? Open an issue with what you did and the last ~20 lines of the log. Copy them from Docker Desktop's **Logs** tab, and **remove your token first** if it appears anywhere.
+
+## Short version (for Docker users)
+
+1. Create an application at the [Discord Developer Portal](https://discord.com/developers/applications) → **Bot** → **Reset Token** → copy it. Optionally enable the privileged intents you want (see [Privileged intents](#privileged-intents--whats-required-vs-optional)).
+2. `git clone https://github.com/Bessv2/DiscordBot.git && cd DiscordBot`
+3. `cp .env.example .env` and set `DISCORD_TOKEN` (plus any `ENABLE_*` flags matching the intents you enabled).
+4. `docker compose up -d --build`
+5. `docker compose logs bot`, then open the invite link it prints. It requests `bot` + `applications.commands` with only the permissions the bot uses.
+6. Move the bot's role above the roles it should moderate, then run `/setup` in your server.
+
+Slash commands are registered automatically on startup whenever their definitions change (global by default; set `DISCORD_GUILD_ID` to register in one guild instantly). Migrations run automatically from the container entrypoint.
 
 ### Running without Docker
+
+Needs Node.js 20+.
 
 ```bash
 npm ci
 npm run build
 npm run db:migrate
-npm run deploy-commands
 npm run start
 ```
 
@@ -114,4 +279,4 @@ npm run typecheck
 npm test
 ```
 
-Set `DISCORD_GUILD_ID` in `.env` while developing so `npm run deploy-commands` registers commands instantly in one server instead of waiting up to an hour for a global rollout.
+Set `DISCORD_GUILD_ID` in `.env` while developing so commands register instantly in that one server instead of globally. The bot re-registers on startup whenever a command definition changes; it keeps a hash in `data/.commands-hash`, so delete that file to force a re-register (or run `npm run deploy-commands:dev`).

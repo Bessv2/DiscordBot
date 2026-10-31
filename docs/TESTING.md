@@ -13,18 +13,9 @@ cd DiscordBot
 
 1. Go to https://discord.com/developers/applications → **New Application**.
 2. **Bot** tab → **Reset Token** → copy it. This is your `DISCORD_TOKEN`. Treat it like a password — don't paste it anywhere public, and don't commit it.
-3. **General Information** tab → copy the **Application ID**. This is your `DISCORD_CLIENT_ID`.
-4. (Optional) If you want to try the invite-link filter, word filter, or mention-spam detection, go back to the **Bot** tab and enable **Message Content Intent** under Privileged Gateway Intents. Everything else — every slash command, warn/kick/ban/timeout, flood-based spam detection — works without this.
+3. (Optional) If you want to try the invite-link filter, word filter, or mention-spam detection, go back to the **Bot** tab and enable **Message Content Intent** under Privileged Gateway Intents. Everything else — every slash command, warn/kick/ban/timeout, flood-based spam detection — works without this.
 
-## 3. Invite the bot to a test server
-
-Use a server you own or have admin on — ideally a throwaway test server, since you'll be running moderation commands against it.
-
-- **OAuth2 → URL Generator** tab → scopes: `bot` and `applications.commands`
-- Permissions: at minimum Kick Members, Ban Members, Moderate Members, Manage Messages, View Channels, Send Messages, Embed Links
-- Open the generated URL and add the bot to your test server
-
-## 4. Configure and start it
+## 3. Configure and start it
 
 `.env` is never committed to the repo — that's what would leak a bot token to anyone with clone access — so a fresh clone will only ever have `.env.example`. You need to create your own `.env` from it:
 
@@ -34,13 +25,12 @@ Copy-Item .env.example .env   # Windows PowerShell
 copy .env.example .env        # Windows cmd.exe
 ```
 
-Then open the new **`.env`** file (not `.env.example` — that one's just the template and is never read by the app) and fill in `DISCORD_TOKEN` and `DISCORD_CLIENT_ID` from step 2. Every other variable already has a working default — see `.env.example` for what each one does.
+Then open the new **`.env`** file (not `.env.example` — that one's just the template and is never read by the app) and fill in `DISCORD_TOKEN` from step 2. Every other variable already has a working default — see `.env.example` for what each one does.
 
 **With Docker (recommended):**
 ```bash
-docker compose up -d
-docker compose exec bot npm run deploy-commands
-docker compose logs -f
+docker compose up -d --build
+docker compose logs -f bot
 ```
 
 **Without Docker:**
@@ -48,15 +38,23 @@ docker compose logs -f
 npm ci
 npm run build
 npm run db:migrate
-npm run deploy-commands
 npm run start
 ```
 
 Either way, you should see something like:
 ```
-Logged in as YourBot#1234 — serving 1 guild(s).
+Logged in as YourBot#1234 — serving 0 guild(s).
+The bot isn't in any server yet. Open this link in your browser to add it to one:
+    https://discord.com/api/oauth2/authorize?client_id=...
+Registered 34 slash commands globally.
 ```
-in the logs. If you see an error instead, it should tell you specifically what's wrong and how to fix it (bad token, missing intent, unwritable data directory, etc.) rather than a raw stack trace — that's intentional, and if it isn't, that's a bug worth reporting.
+in the logs. The bot registers its own slash commands on startup, so there's no separate step for that. If you see an error instead, it should tell you specifically what's wrong and how to fix it (bad token, missing intent, unwritable data directory, etc.) rather than a raw stack trace — that's intentional, and if it isn't, that's a bug worth reporting.
+
+## 4. Invite the bot to a test server
+
+Use a server you own or have admin on — ideally a throwaway test server, since you'll be running moderation commands against it. Open the invite link from the log above, pick the server, and authorize. Then in **Server Settings → Roles**, drag the bot's role above the role(s) of whatever alt account you'll test moderation on.
+
+Slash commands can take a few minutes to appear the first time; restart Discord (Ctrl+R) if they don't. For instant registration while testing, set `DISCORD_GUILD_ID` in `.env` to your test server's ID and run `docker compose up -d` again.
 
 ## 5. Try it out
 
