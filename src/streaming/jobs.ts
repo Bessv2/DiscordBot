@@ -3,6 +3,7 @@ import { prisma } from '../lib/db';
 import { logger } from '../lib/logger';
 import { getLiveTwitchStreams } from '../lib/twitch';
 import { getYoutubeLiveVideo } from '../lib/youtube';
+import { guildIdsWithModuleOff } from '../lib/modules';
 
 /**
  * Scheduler job (slow tick, every 5 min): for each /streamwatch entry,
@@ -12,7 +13,10 @@ import { getYoutubeLiveVideo } from '../lib/youtube';
  * logged once (see src/lib/twitch.ts and src/lib/youtube.ts).
  */
 export async function checkStreamNotifications(client: Client<true>): Promise<void> {
-  const rows = await prisma.streamNotification.findMany();
+  // Servers that switched stream alerts off are dropped before any API
+  // call, so they cost no Twitch/YouTube quota.
+  const off = await guildIdsWithModuleOff('streams');
+  const rows = (await prisma.streamNotification.findMany()).filter((r) => !off.has(r.guildId));
   if (rows.length === 0) return;
 
   const twitchRows = rows.filter((r) => r.platform === 'twitch');

@@ -5,6 +5,7 @@ import { logger } from '../lib/logger';
 import { buildAppealModal, submitAppeal, resolveAppeal } from '../lib/appealActions';
 import { joinLfg, leaveLfg, closeLfg, buildLfgButtons, buildLfgEmbed } from '../lib/lfgActions';
 import { prisma } from '../lib/db';
+import { blockingModule } from '../lib/modules';
 
 export async function interactionCreate(interaction: Interaction): Promise<void> {
   if (interaction.isButton() && interaction.customId.startsWith('appeal_')) {
@@ -41,6 +42,21 @@ export async function interactionCreate(interaction: Interaction): Promise<void>
     if (!allowed) {
       await interaction.reply({
         content: "You don't have permission to use this command.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    // A module switched off in /setup blocks its commands for everyone,
+    // admins included, so the server behaves as if the feature isn't there.
+    const guildConfig = await prisma.guildConfig.findUnique({
+      where: { id: interaction.guildId },
+      select: { disabledModules: true },
+    });
+    const blockedBy = guildConfig ? blockingModule(interaction.commandName, guildConfig.disabledModules) : null;
+    if (blockedBy) {
+      await interaction.reply({
+        content: `**${blockedBy.name}** is turned off on this server. An admin can turn it on again with \`/setup\`.`,
         ephemeral: true,
       });
       return;

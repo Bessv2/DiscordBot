@@ -107,13 +107,38 @@ export async function muteMember(
 export async function unmuteMember(guild: Guild, target: GuildMember, moderator: User, reason: string | null): Promise<ActionResult> {
   if (target.id === moderator.id) return { ok: false, message: "You can't unmute yourself." };
   const guildConfig = await getOrCreateGuildConfig(guild.id);
-  if (guildConfig.muteRoleId) {
-    await target.roles.remove(guildConfig.muteRoleId, reason ?? 'Unmuted').catch(() => null);
+  if (guildConfig.muteRoleId && target.roles.cache.has(guildConfig.muteRoleId)) {
+    // Don't report "unmuted" while the member still has the role.
+    const removed = await target.roles.remove(guildConfig.muteRoleId, reason ?? 'Unmuted').then(
+      () => true,
+      (err: Error) => {
+        logger.warn(`Could not remove the mute role from ${target.id} in guild ${guild.id}: ${err.message}`);
+        return false;
+      },
+    );
+    if (!removed) {
+      return {
+        ok: false,
+        message: "I couldn't remove the Muted role. Move my role above **Muted** in Server Settings → Roles, then try again.",
+      };
+    }
   }
   await prisma.mute.updateMany({ where: { guildId: guild.id, userId: target.id, active: true }, data: { active: false } });
 
+  // Same accountability record as every other action, so /cases shows the unmute too.
+  const record = await createCase({
+    guildId: guild.id,
+    type: 'unmute',
+    targetId: target.id,
+    targetTag: target.user.tag,
+    moderatorId: moderator.id,
+    moderatorTag: moderator.tag,
+    reason,
+  });
+
   await postModLog(guild, {
     type: 'unmute',
+    caseNumber: record.caseNumber,
     target: target.user,
     moderator,
     reason: reason ?? 'Unmuted',

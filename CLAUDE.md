@@ -25,7 +25,7 @@ Stack is open, but here's the default recommendation — pick this unless there'
 
 | Layer | Choice | Why |
 | --- | --- | --- |
-| Language/runtime | Node.js (LTS) + TypeScript | Best-maintained Discord library ecosystem, huge slash-command tooling, easy for a solo self-hoster to `npm install && run` |
+| Language/runtime | Node.js (LTS, currently 22) + TypeScript | Best-maintained Discord library ecosystem, huge slash-command tooling, easy for a solo self-hoster to `npm install && run` |
 | Discord library | discord.js v14+ | Most active library, native slash-command and permission-v2 support |
 | Database | SQLite (via better-sqlite3 or Prisma) by default; Postgres as a drop-in option | Zero-setup default, no separate DB server for small hosts; Postgres for anyone scaling to multiple large guilds |
 | Config | `.env` for secrets + a `config.yml` or in-Discord settings commands for behavior | Keeps secrets out of version control while making tunables discoverable |
@@ -90,6 +90,9 @@ Non-negotiables:
 - [x] Economy/bank system — user credits, slot machine, leaderboard
 - [x] Trivia module with custom/importable question lists
 - [x] Reaction-role self-assignment (emoji opt-in — distinct from the XP-based role rewards above)
+- [x] Game-night map pools — per-game map lists, random pick, or a native Discord poll vote (`/map`)
+- [x] Group listening — `/jam` launches Discord's own YouTube Watch Together (zero cost, default); `/music` is the opt-in heavy player (see decision below)
+- [x] `/setup` feature map — every module listed with status, per-feature channel/role mapping, on/off switch per module, Skip on every screen
 
 All of these are plugin-architecture candidates — a host running a pure moderation setup should never load this code or pay its resource cost unless they turn it on.
 
@@ -106,7 +109,7 @@ Every item above should be gated so a host running only the core feels no weight
 
 **Explicitly out of scope for now:**
 
-- Music playback (YouTube/SoundCloud streaming) — heavy dependency footprint (ffmpeg, voice pipeline), conflicts with the resource-conscious principle (§2) unless it ever ships as a clearly optional, clearly heavy module
+- ~~Music playback~~ — **Decided 2026-10-31: ships as a clearly optional, clearly heavy module**, per the condition this line used to set. `/jam` (Discord Watch Together, no audio through the bot) is the default way to listen together. `/music` (bot streams YouTube audio via yt-dlp + ffmpeg) is off unless the host sets `ENABLE_MUSIC=true` and uses the separate `music` image, so a host who never turns it on downloads none of it and loads none of its code. Hosts are told plainly that streaming YouTube through a bot is against YouTube's ToS; that's their call to make. SoundCloud and other sources stay out of scope.
 - Community plugin index / full 3rd-party cog marketplace — meaningful trust/security surface (running community-submitted code); revisit only once core is stable
 
 The plugin architecture and "no coding required" onboarding goals above are a proven pattern, not a novel risk — validated by [Red-DiscordBot](https://github.com/Cog-Creators/Red-DiscordBot), a long-running, widely used self-hosted Python/discord.py bot with a mature cog ecosystem running exactly this model at scale.

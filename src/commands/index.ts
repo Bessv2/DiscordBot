@@ -33,9 +33,13 @@ import { streamwatchCommand } from './fun/streamwatch';
 import { activityroleCommand } from './fun/activityrole';
 import { lfgCommand } from './fun/lfg';
 import { tournamentCommand } from './fun/tournament';
+import { mapCommand } from './fun/map';
+import { jamCommand } from './fun/jam';
+import { musicCommand } from './fun/music';
 
 // One command = one file/module (section 8) — this is the only place they
-// get wired together, for both live command dispatch and `deploy-commands`.
+// get wired together, for live command dispatch and for registering the
+// commands with Discord (commandSync.ts on startup, or `deploy-commands`).
 export const commands: Command[] = [
   warnCommand,
   kickCommand,
@@ -71,4 +75,7 @@ export const commands: Command[] = [
   activityroleCommand,
   lfgCommand,
   tournamentCommand,
+  mapCommand,
+  jamCommand,
+  musicCommand,
 ];
