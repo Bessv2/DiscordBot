@@ -1,6 +1,7 @@
 import { MessageReaction, PartialMessageReaction, User, PartialUser } from 'discord.js';
 import { prisma } from './db';
 import { logger } from './logger';
+import { isModuleEnabledForGuild } from './modules';
 
 function emojiKey(reaction: MessageReaction | PartialMessageReaction): string {
   return reaction.emoji.id ?? reaction.emoji.name ?? '';
@@ -11,7 +12,7 @@ export async function handleReactionRoleAdd(reaction: MessageReaction | PartialM
   const row = await prisma.reactionRole.findUnique({
     where: { guildId_messageId_emoji: { guildId: reaction.message.guildId, messageId: reaction.message.id, emoji: emojiKey(reaction) } },
   });
-  if (!row) return;
+  if (!row || !(await isModuleEnabledForGuild(row.guildId, 'reactionroles'))) return;
 
   const guild = reaction.message.guild;
   const member = await guild?.members.fetch(user.id).catch(() => null);
@@ -25,7 +26,7 @@ export async function handleReactionRoleRemove(reaction: MessageReaction | Parti
   const row = await prisma.reactionRole.findUnique({
     where: { guildId_messageId_emoji: { guildId: reaction.message.guildId, messageId: reaction.message.id, emoji: emojiKey(reaction) } },
   });
-  if (!row) return;
+  if (!row || !(await isModuleEnabledForGuild(row.guildId, 'reactionroles'))) return;
 
   const guild = reaction.message.guild;
   const member = await guild?.members.fetch(user.id).catch(() => null);

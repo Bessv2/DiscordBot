@@ -2,6 +2,7 @@ import { Client } from 'discord.js';
 import { prisma } from '../lib/db';
 import { logger } from '../lib/logger';
 import { config } from '../config';
+import { isModuleOn } from '../lib/modules';
 
 // Guards against re-announcing the same person's birthday on every slow
 // tick within the same day. Keyed by date so it naturally "resets" each
@@ -19,6 +20,7 @@ export async function checkBirthdays(client: Client<true>): Promise<void> {
   const guildConfigs = await prisma.guildConfig.findMany({ where: { birthdayChannelId: { not: null } } });
 
   for (const guildConfig of guildConfigs) {
+    if (!isModuleOn(guildConfig, 'birthdays')) continue;
     const guild = await client.guilds.fetch(guildConfig.id).catch(() => null);
     if (!guild) continue;
 

@@ -2,6 +2,7 @@ import { EmbedBuilder, MessageReaction, PartialMessageReaction } from 'discord.j
 import { prisma } from './db';
 import { config } from '../config';
 import { logger } from './logger';
+import { isModuleOn } from './modules';
 
 /**
  * Keeps the starboard post for a message in sync with its current reaction
@@ -20,7 +21,7 @@ export async function syncStarboard(partialReaction: MessageReaction | PartialMe
   if (!message || !message.guild) return;
 
   const guildConfig = await prisma.guildConfig.findUnique({ where: { id: message.guild.id } });
-  if (!guildConfig?.starboardChannelId) return;
+  if (!guildConfig?.starboardChannelId || !isModuleOn(guildConfig, 'starboard')) return;
   if (reaction.emoji.name !== guildConfig.starboardEmoji && reaction.emoji.toString() !== guildConfig.starboardEmoji) return;
 
   const count = reaction.count ?? 0;

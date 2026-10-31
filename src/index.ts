@@ -5,9 +5,12 @@ import { loadEvents } from './discord/eventHandler';
 import { runStartupHealthCheck } from './lib/healthcheck';
 import { prisma } from './lib/db';
 import { logger } from './lib/logger';
+import { checkMusicTools } from './music/check';
+import { stopAllMusic } from './commands/fun/music';
 
 async function main() {
   await runStartupHealthCheck();
+  checkMusicTools();
 
   loadCommands(client);
   loadEvents(client);
@@ -55,6 +58,7 @@ function handleLoginError(err: Error): void {
 
 async function shutdown(signal: string): Promise<void> {
   logger.info(`Received ${signal}, shutting down...`);
+  stopAllMusic(); // kills ffmpeg/yt-dlp children before the process exits
   client.destroy();
   await prisma.$disconnect();
   process.exit(0);

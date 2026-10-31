@@ -19,6 +19,10 @@ const INVITE_PERMISSIONS = [
   PermissionFlagsBits.ModerateMembers, // timeouts
   PermissionFlagsBits.ManageRoles, // mute role, reaction/XP/birthday/activity roles
   PermissionFlagsBits.ManageChannels, // lockdown, mute-role channel overrides
+  PermissionFlagsBits.CreateInstantInvite, // /jam watch-party invites
+  PermissionFlagsBits.SendPolls, // /map vote
+  PermissionFlagsBits.Connect, // /music (opt-in)
+  PermissionFlagsBits.Speak, // /music (opt-in)
 ];
 
 export function ready(client: Client<true>): void {

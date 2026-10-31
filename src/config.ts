@@ -45,6 +45,15 @@ const envSchema = z.object({
     .optional()
     .transform((v) => v === 'true'),
 
+  // Opt-in heavy module: the bot joins voice and plays YouTube audio. Needs
+  // ffmpeg + yt-dlp, which only the music image ships (see README → Music).
+  // Off by default: it costs ~100-200MB RAM while playing, and streaming
+  // YouTube through a bot is against YouTube's Terms of Service.
+  ENABLE_MUSIC: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
+
   // Optional integrations below — every one of them fails closed (feature
   // just doesn't run, logged once) rather than crashing when unset.
   TWITCH_CLIENT_ID: z.string().optional(),

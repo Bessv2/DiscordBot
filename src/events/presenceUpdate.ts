@@ -2,6 +2,7 @@ import { ActivityType, Presence } from 'discord.js';
 import { prisma } from '../lib/db';
 import { logger } from '../lib/logger';
 import { rolesToAssign } from '../lib/activityRoles';
+import { isModuleEnabledForGuild } from '../lib/modules';
 
 // Requires the privileged GuildPresences intent (ENABLE_PRESENCE=true) —
 // this event never fires without it, so the whole feature is intent-gated
@@ -12,6 +13,7 @@ export async function presenceUpdate(_oldPresence: Presence | null, newPresence:
 
   const mappings = await prisma.voiceActivityRole.findMany({ where: { guildId: member.guild.id } });
   if (mappings.length === 0) return;
+  if (!(await isModuleEnabledForGuild(member.guild.id, 'activityroles'))) return;
 
   const activityNames = newPresence.activities.filter((a) => a.type === ActivityType.Playing).map((a) => a.name);
   const shouldHave = rolesToAssign(

@@ -41,6 +41,9 @@
     "vitest": "^2.1.1"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.12.0"
+  },
+  "optionalDependencies": {
+    "@discordjs/voice": "^0.19.2"
   }
 }

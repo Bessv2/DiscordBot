@@ -19,12 +19,16 @@ import { Command } from '../commands/types';
 // GuildPresences (privileged): only requested via ENABLE_PRESENCE, needed
 //   for voice-activity role auto-assignment (reading Rich Presence game
 //   activity). The single most invasive intent here — off by default.
+// GuildVoiceStates: not privileged — lets the bot see which voice channel
+//   a member is in, so /jam and /music can join theirs. Voice states are a
+//   small cache (one entry per member currently in voice).
 // GuildModeration is not a real gateway intent; ban/kick/timeout are done
 // over the REST API and need no gateway intent at all.
 const intents: GatewayIntentBits[] = [
   GatewayIntentBits.Guilds,
   GatewayIntentBits.GuildMessages,
   GatewayIntentBits.GuildMessageReactions,
+  GatewayIntentBits.GuildVoiceStates,
 ];
 if (config.ENABLE_MESSAGE_CONTENT) {
   intents.push(GatewayIntentBits.MessageContent);
