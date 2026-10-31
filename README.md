@@ -92,10 +92,12 @@ Save the file and close the editor. In Notepad or TextEdit, use **File → Save*
 In the same terminal window, paste this and press **Enter**:
 
 ```
-docker compose up -d --build
+docker compose up -d
 ```
 
-The first time, this takes a few minutes while Docker downloads and builds everything. That's normal. When you get your prompt back and it says the container is **Started**, the bot is running in the background. You can close the terminal now and the bot keeps running.
+The first time, this takes a minute or two while Docker downloads the ready-made bot. That's normal. When you get your prompt back and it says the container is **Started**, the bot is running in the background. You can close the terminal now and the bot keeps running.
+
+> **Want updates to install themselves?** Before running the command above, open `.env` again and change `COMPOSE_PROFILES=` to `COMPOSE_PROFILES=autoupdate`. See [Updating](#updating-to-a-new-version).
 
 ### Step 6 — Add the bot to your server
 
@@ -108,7 +110,7 @@ The bot writes your personal invite link in its log the first time it starts.
    The bot isn't in any server yet. Open this link in your browser to add it to one:
        https://discord.com/api/oauth2/authorize?client_id=...
    ```
-   You should also see `Logged in as YourBot#1234` and `Registered 34 slash commands globally`.
+   You should also see `Logged in as YourBot#1234` and `Registered 37 slash commands globally`.
 3. Copy that link into your browser. Pick your server, click **Continue**, and then click **Authorize**. Leave the permissions ticked: they're the ones the bot needs.
 
 **One more click that's easy to miss:** in Discord, open **Server Settings → Roles** and drag the bot's role (it has the bot's name) **above** the roles of the members it should be able to moderate. Discord only lets a bot kick, ban, time out or give roles to members whose highest role is *below* its own.
@@ -117,11 +119,14 @@ The bot writes your personal invite link in its log the first time it starts.
 
 ### Step 7 — Set it up inside Discord
 
-In any channel on your server, type `/setup` and pick it from the menu that pops up. The wizard walks you through:
-- which channel moderation logs go to
-- whether to turn on auto-moderation, and how strict it should be
-- which roles can use moderation and admin commands
-- which optional modules (levels, starboard, economy, and more) to turn on
+In any channel on your server, type `/setup` and pick it from the menu that pops up. Only you can see what it shows.
+
+It opens on a **feature map**: every feature the bot has, with ✅ on, ⬜ off, or ⚠️ on but needing something (like a channel to post in). From there:
+- **🚀 Quick start** walks you through the three essentials: the mod-log channel, auto-moderation, and who can moderate.
+- **Pick any feature** from the menu to turn it on or off and choose its channels and roles: welcome messages, levels and role rewards, starboard, birthdays, music and watch parties, game-night maps, and the rest.
+- **Skip** is on every screen. Nothing is required, and every feature works with sensible defaults. **Skip for now** closes the wizard, and you can come back with `/setup` any time.
+
+Changes save the moment you make them.
 
 `/setup` not showing up yet? The first time, Discord can take a few minutes to show a new bot's commands. Wait a few minutes, then restart Discord or press Ctrl+R (Cmd+R on Mac).
 
@@ -140,13 +145,20 @@ Your data (settings, case history, levels, and so on) lives in the `data` folder
 
 ## Updating to a new version
 
-1. Back up the `data` folder (see above).
-2. Get the new version:
-   - **ZIP download:** download and unzip the new ZIP as in step 2. Copy your **`.env`** file and your **`data`** folder from the old bot folder into the new one. Then delete the old folder, or stop the old bot first so two copies don't run at once.
-   - **git:** in the bot folder, run `git pull`.
-3. Open a terminal in the (new) bot folder and run `docker compose up -d --build` again.
+New versions are published as ready-made images, so updating never means downloading the bot again or rebuilding it. Your settings and data stay where they are.
 
-Database changes are applied automatically, and slash commands update by themselves. See [`docs/UPGRADING.md`](./docs/UPGRADING.md) for the details.
+**Automatic (recommended):** in `.env`, set `COMPOSE_PROFILES=autoupdate`, then run `docker compose up -d` once. From then on, the bot checks for a new version once a day at 04:00 and installs it by itself, with a quick restart. It's off unless you turn it on, because it means your computer checks GitHub daily. To turn it off again, empty that line and run `docker compose up -d`.
+
+**By hand, whenever you like:** open a terminal in the bot folder and run:
+
+```
+docker compose pull
+docker compose up -d
+```
+
+The first line downloads the new version, and the second restarts the bot on it.
+
+Either way, database changes are applied automatically and slash commands update by themselves. See [`docs/UPGRADING.md`](./docs/UPGRADING.md) for details. Occasionally a release also needs a new file from this repo, such as a new `docker-compose.yml`. When that happens, the release notes say so.
 
 ## Troubleshooting
 
@@ -155,6 +167,7 @@ Database changes are applied automatically, and slash commands update by themsel
 | `docker` is not recognized / `command not found` | Docker Desktop isn't installed, or the terminal was opened before you installed it. Close the terminal, make sure Docker Desktop is open, and open a new terminal. |
 | `Cannot connect to the Docker daemon`, or `error during connect` | Docker Desktop isn't running. Open it and wait for **Engine running**, then try again. |
 | `env file ... .env not found` | You haven't made `.env` yet, or it isn't in the bot folder. Redo step 4. On Windows, make sure Notepad didn't save it as `.env.txt`. |
+| `manifest unknown`, `denied`, or `pull access denied` for `ghcr.io/bessv2/discordbot` | The ready-made image isn't published yet (or your `BOT_IMAGE_TAG` is misspelled). Build it yourself instead: `docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build`. |
 | `no configuration file provided: not found` | The terminal isn't in the bot folder. Open the terminal from the folder that contains `docker-compose.yml` (step 4). |
 | Log says `DISCORD_TOKEN: DISCORD_TOKEN is required` | The token line in `.env` is empty or wasn't saved. Paste the token again and save. Then run `docker compose up -d` to restart. |
 | Log says `Discord rejected the bot token` | The token is wrong or was reset. Copy a fresh one from the **Bot** tab (**Reset Token**), not the "Client Secret" on the OAuth2 tab. Put it in `.env`, then run `docker compose up -d`. |
@@ -174,15 +187,15 @@ Still stuck? Open an issue with what you did and the last ~20 lines of the log. 
 1. Create an application at the [Discord Developer Portal](https://discord.com/developers/applications) → **Bot** → **Reset Token** → copy it. Optionally enable the privileged intents you want (see [Privileged intents](#privileged-intents--whats-required-vs-optional)).
 2. `git clone https://github.com/Bessv2/DiscordBot.git && cd DiscordBot`
 3. `cp .env.example .env` and set `DISCORD_TOKEN` (plus any `ENABLE_*` flags matching the intents you enabled).
-4. `docker compose up -d --build`
+4. `docker compose up -d` (pulls `ghcr.io/bessv2/discordbot:latest`; add `-f docker-compose.build.yml --build` to build from source instead)
 5. `docker compose logs bot`, then open the invite link it prints. It requests `bot` + `applications.commands` with only the permissions the bot uses.
 6. Move the bot's role above the roles it should moderate, then run `/setup` in your server.
 
-Slash commands are registered automatically on startup whenever their definitions change (global by default; set `DISCORD_GUILD_ID` to register in one guild instantly). Migrations run automatically from the container entrypoint.
+Slash commands are registered automatically on startup whenever their definitions change (global by default; set `DISCORD_GUILD_ID` to register in one guild instantly). Migrations run automatically from the container entrypoint. Images are multi-arch (amd64, arm64) and rebuilt by GitHub Actions on every push to `main` and weekly; `COMPOSE_PROFILES=autoupdate` adds a pinned, label-scoped [Watchtower](https://github.com/nicholas-fedor/watchtower) that only updates this container.
 
 ### Running without Docker
 
-Needs Node.js 20+.
+Needs Node.js 22.12+. For `/music`, also install `ffmpeg` and [`yt-dlp`](https://github.com/yt-dlp/yt-dlp#installation) so both are on the `PATH`.
 
 ```bash
 npm ci
@@ -196,6 +209,21 @@ Use [pm2](https://pm2.keymetrics.io/) (`pm2 start dist/index.js --name discord-m
 ### Deploying on Railway
 
 If you'd rather not manage a VPS, see [`docs/RAILWAY.md`](./docs/RAILWAY.md) — connects this repo to [Railway](https://railway.com) and builds the same `Dockerfile` you'd use locally. (No "Deploy on Railway" button here — that needs a published Railway Template from a live account, which a repo file can't create on its own; the doc explains why and how to get one later if you want it.)
+
+## Music and watch parties
+
+There are two ways to listen together, and you can use both:
+
+| | `/jam` (Watch Together) | `/music` (the bot plays) |
+| --- | --- | --- |
+| How it works | Opens Discord's own YouTube **Watch Together** activity in your voice channel. Everyone watches and hears it in sync and can queue videos and playlists. | The bot joins your voice channel and plays songs, playlists or searches from YouTube, with a shared queue, skip, shuffle and pause. |
+| Setup | None. On for every server. | Off by default. Its host turns it on (below). |
+| Cost to run | Nothing: Discord does the streaming. | About 100–200 MB more RAM while playing, plus some CPU for ffmpeg. Nothing while idle. |
+| YouTube's rules | Official Discord feature. | Streaming YouTube through a bot is against YouTube's Terms of Service. That's the host's call. |
+
+**Turning on `/music` (for whoever runs the bot):** in `.env`, set `ENABLE_MUSIC=true` **and** `BOT_IMAGE_TAG=music` (the image that includes ffmpeg and yt-dlp), then run `docker compose up -d`. The log should say `Music is on: ffmpeg and yt-dlp found.` Because YouTube changes often, the music image updates yt-dlp each time it starts. Set `MUSIC_AUTO_UPDATE=false` to stop that.
+
+Server admins can pick a **DJ role** in `/setup` → Music. Then only DJs, moderators, or whoever queued a song can skip or remove it. The bot only accepts YouTube links (anything else is treated as a search), skips live streams and videos over 3 hours, and leaves voice when the queue has been empty for 5 minutes or everyone else has left.
 
 ## Resource baseline
 
@@ -214,7 +242,7 @@ Idle footprint on a single small guild is roughly **60-100MB RAM** and negligibl
 
 **Utility**
 - `/userinfo`, `/serverinfo`, `/remind`, `/poll`
-- Guided `/setup` wizard + `/config` for everything above
+- `/setup`: a feature map of everything the bot does, where you turn each feature on or off and pick its channels and roles. `/config` covers the same settings as commands.
 
 **Community & fun** (all opt-in, zero cost unless turned on)
 - `/tag` custom commands, `/quote` archive, `/roll` `/coinflip` `/8ball`
@@ -225,6 +253,10 @@ Idle footprint on a single small guild is roughly **60-100MB RAM** and negligibl
 - `/gameserver` status lookup (Minecraft, Valheim, Ark, ~180 others via [gamedig](https://github.com/gamedig/node-gamedig))
 - `/gamestats` (Steam, League of Legends — needs an API key), `/streamwatch` (Twitch/YouTube live alerts — needs API credentials)
 - `/activityrole` (auto-role from Rich Presence), `/lfg` (looking-for-group posts), `/tournament` (bracket tracker)
+- `/map`: per-game map pools for game nights; pick at random or open a Discord poll to vote
+- `/jam` (YouTube Watch Together in voice) and opt-in `/music` (the bot plays YouTube songs and playlists), see [Music and watch parties](#music-and-watch-parties)
+
+Any of these can be switched off per server from `/setup`. A switched-off feature's commands say so, and its background work (stream polling, birthday posts, reaction roles) stops for that server.
 
 See [`CLAUDE.md`](./CLAUDE.md) for what's still on the roadmap (plugin architecture, AI-assisted triage, a web dashboard, cross-server features).
 
@@ -235,6 +267,7 @@ See [`CLAUDE.md`](./CLAUDE.md) for what's still on the roadmap (plugin architect
 | Guilds | Everything | Always on, not privileged |
 | Guild Messages | Flood-based spam detection, prefix commands, XP gain | Always on, not privileged |
 | Guild Message Reactions | Starboard, reaction-roles | Always on, not privileged |
+| Guild Voice States | `/jam` and `/music` finding which voice channel you're in | Always on, not privileged; a small cache of who is in voice |
 | **Message Content** (privileged) | Invite-link filter, word filter, mention-spam detection, legacy prefix commands, starboard message text | **Opt-in** via `ENABLE_MESSAGE_CONTENT=true` in `.env`. |
 | **Guild Members** (privileged) | Welcome/goodbye messages, anti-raid join tracking, birthday-role cleanup | **Opt-in** via `ENABLE_GUILD_MEMBERS=true` in `.env`. |
 | **Presence** (privileged) | `/activityrole` (reading Rich Presence game activity) | **Opt-in** via `ENABLE_PRESENCE=true` in `.env` — the most invasive one here, off by default. |
@@ -266,7 +299,7 @@ On boot the bot validates the database is reachable/writable and that the token 
 
 ## Security & privacy
 
-- No telemetry, analytics, or phone-home update checks — none exist in this codebase.
+- No telemetry or analytics. The bot itself never checks for updates. The only update checks are opt-in: the auto-updater (`COMPOSE_PROFILES=autoupdate`, daily, to GitHub's image registry) and, only with music on, yt-dlp updating itself at startup (`MUSIC_AUTO_UPDATE`).
 - Message content is only stored (truncated, attached to auto-mod hits in the mod-log) if you explicitly enable `/config wordfilter` logging behavior — see [`CLAUDE.md` §7](./CLAUDE.md#7-security--privacy-guidelines).
 - Every moderation action is logged with actor, target, reason, and timestamp for your own accountability record — that data never leaves your database.
 
@@ -279,5 +312,7 @@ npm run lint
 npm run typecheck
 npm test
 ```
+
+To run your local code changes in Docker, build from source with `docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build`.
 
 Set `DISCORD_GUILD_ID` in `.env` while developing so commands register instantly in that one server instead of globally. The bot re-registers on startup whenever a command definition changes; it keeps a hash in `data/.commands-hash`, so delete that file to force a re-register (or run `npm run deploy-commands:dev`).

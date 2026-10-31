@@ -1,0 +1,14 @@
+# For building the bot from this folder's source code instead of
+# downloading the ready-made image, e.g. if you changed the code:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
+#
+# ENABLE_MUSIC=true in .env also builds in the music tools.
+services:
+  bot:
+    image: discord-mod-bot:local
+    build:
+      context: .
+      args:
+        MUSIC: ${ENABLE_MUSIC:-false}
+    labels: !reset []

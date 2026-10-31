@@ -49,6 +49,12 @@ why it's `../data/bot.db` and not `./data/bot.db`. Everything else
 (`ENABLE_MESSAGE_CONTENT`, the optional integration keys, etc.) is optional,
 same as any other deployment.
 
+**Music on Railway:** Railway builds the `Dockerfile` itself rather than
+using the published image, so add `MUSIC=true` as well as
+`ENABLE_MUSIC=true`. Railway passes variables to the build, and `MUSIC=true`
+builds in ffmpeg and yt-dlp. (`BOT_IMAGE_TAG`, `COMPOSE_PROFILES` and `TZ`
+only matter for Docker Compose, so you can leave them out here.)
+
 ## 4. Deploy, then invite the bot
 
 Railway deploys automatically on push. The bot registers its own slash

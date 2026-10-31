@@ -1,0 +1,93 @@
+# Builds the ready-made bot images that docker-compose.yml downloads, so
+# hosts never have to build anything themselves:
+#   ghcr.io/bessv2/discordbot:latest  — the standard bot
+#   ghcr.io/bessv2/discordbot:music   — the same bot plus ffmpeg/yt-dlp for /music
+# Both are built for x86 PCs/servers and 64-bit ARM (Raspberry Pi 4/5).
+#
+# Pull requests only run the checks and a test build; nothing is published.
+name: Checks and images
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  # Weekly rebuild picks up Alpine/Node security fixes and a fresh yt-dlp
+  # even in weeks with no code changes.
+  schedule:
+    - cron: '23 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    env:
+      CHECKPOINT_DISABLE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  image:
+    needs: checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: standard
+            music: 'false'
+            tags: |
+              type=raw,value=latest,enable={{is_default_branch}}
+              type=semver,pattern={{version}}
+              type=sha
+          - variant: music
+            music: 'true'
+            tags: |
+              type=raw,value=music,enable={{is_default_branch}}
+              type=semver,pattern={{version}},suffix=-music
+              type=sha,suffix=-music
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: ${{ matrix.tags }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          build-args: MUSIC=${{ matrix.music }}
+          # PRs build x86 only, to check the Dockerfile quickly.
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || 'linux/amd64,linux/arm64' }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.variant }}

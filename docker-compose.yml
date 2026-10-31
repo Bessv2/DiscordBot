@@ -1,10 +1,38 @@
+# Runs the bot from a ready-made image, so installing and updating are just
+# downloads: no building on your computer. To build from the source code
+# instead, see docker-compose.build.yml.
 services:
   bot:
-    build: .
+    # "latest" is the standard bot. "music" is the same bot plus the tools
+    # /music needs (set BOT_IMAGE_TAG=music and ENABLE_MUSIC=true in .env).
+    image: ghcr.io/bessv2/discordbot:${BOT_IMAGE_TAG:-latest}
     container_name: discord-mod-bot
     restart: unless-stopped
     env_file:
       - .env
     volumes:
-      # The SQLite database lives here so it survives image rebuilds/upgrades.
+      # The SQLite database lives here so it survives updates and rebuilds.
       - ./data:/app/data
+    labels:
+      # Lets the optional auto-updater below update this container (and only this one).
+      - com.centurylinklabs.watchtower.enable=true
+
+  # Optional automatic updates, off unless you turn them on. To turn them on,
+  # set COMPOSE_PROFILES=autoupdate in .env and run `docker compose up -d`.
+  # Once a day it checks for a new bot image and, if there is one, downloads
+  # it and restarts the bot. Your data folder is never touched.
+  # It needs access to Docker itself (the docker.sock line), which is why
+  # it's opt-in, pinned to one release, and limited to the labelled bot
+  # container above.
+  updater:
+    image: nickfedor/watchtower:1.23.2
+    profiles: ["autoupdate"]
+    container_name: discord-mod-bot-updater
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      WATCHTOWER_LABEL_ENABLE: "true" # only containers labelled above
+      WATCHTOWER_CLEANUP: "true" # delete the old image after updating, to save disk
+      WATCHTOWER_SCHEDULE: "0 0 4 * * *" # 04:00 every day (UTC unless you set TZ)
+      TZ: ${TZ:-UTC}
