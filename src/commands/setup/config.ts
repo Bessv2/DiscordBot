@@ -89,6 +89,15 @@ export const configCommand: Command = {
           o.setName('channel').setDescription('Defaults to the mod-log channel if unset').addChannelTypes(ChannelType.GuildText).setRequired(true),
         ),
     )
+    .addSubcommand((sc) =>
+      sc
+        .setName('birthday')
+        .setDescription('Configure birthday announcements')
+        .addChannelOption((o) =>
+          o.setName('channel').setDescription('Where to announce birthdays').addChannelTypes(ChannelType.GuildText).setRequired(false),
+        )
+        .addRoleOption((o) => o.setName('role').setDescription('Role to grant for the day (optional)').setRequired(false)),
+    )
     .setDMPermission(false) as SlashCommandData,
   scope: 'admin',
   nativePermission: PermissionFlagsBits.ManageGuild,
@@ -201,6 +210,19 @@ export const configCommand: Command = {
         const channel = interaction.options.getChannel('channel', true);
         await prisma.guildConfig.update({ where: { id: guildId }, data: { appealChannelId: channel.id } });
         await interaction.reply({ content: `Appeal channel set to <#${channel.id}>.`, ephemeral: true });
+        return;
+      }
+      case 'birthday': {
+        const channel = interaction.options.getChannel('channel');
+        const role = interaction.options.getRole('role');
+        await prisma.guildConfig.update({
+          where: { id: guildId },
+          data: {
+            ...(channel ? { birthdayChannelId: channel.id } : {}),
+            ...(role ? { birthdayRoleId: role.id } : {}),
+          },
+        });
+        await interaction.reply({ content: 'Birthday settings updated.', ephemeral: true });
         return;
       }
     }

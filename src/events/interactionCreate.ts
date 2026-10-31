@@ -1,13 +1,22 @@
-import { Collection, Interaction, PermissionFlagsBits } from 'discord.js';
+import { ButtonInteraction, Collection, Interaction, PermissionFlagsBits } from 'discord.js';
 import { Command } from '../commands/types';
 import { memberHasPermission } from '../lib/permissions';
 import { logger } from '../lib/logger';
 import { buildAppealModal, submitAppeal, resolveAppeal } from '../lib/appealActions';
+import { joinLfg, leaveLfg, closeLfg, buildLfgButtons, buildLfgEmbed } from '../lib/lfgActions';
+import { prisma } from '../lib/db';
 
 export async function interactionCreate(interaction: Interaction): Promise<void> {
   if (interaction.isButton() && interaction.customId.startsWith('appeal_')) {
     await handleAppealButton(interaction).catch((err) => {
       logger.error(`Appeal button handler threw: ${(err as Error).message}`);
+    });
+    return;
+  }
+
+  if (interaction.isButton() && interaction.customId.startsWith('lfg_')) {
+    await handleLfgButton(interaction).catch((err) => {
+      logger.error(`LFG button handler threw: ${(err as Error).message}`);
     });
     return;
   }
@@ -51,7 +60,7 @@ export async function interactionCreate(interaction: Interaction): Promise<void>
   }
 }
 
-async function handleAppealButton(interaction: import('discord.js').ButtonInteraction): Promise<void> {
+async function handleAppealButton(interaction: ButtonInteraction): Promise<void> {
   const [action, idStr] = interaction.customId.split(':');
   const id = Number(idStr);
 
@@ -74,6 +83,36 @@ async function handleAppealButton(interaction: import('discord.js').ButtonIntera
   const decision = action === 'appeal_accept' ? 'accepted' : 'denied';
   const result = await resolveAppeal(interaction.client, id, decision, interaction.user);
   await interaction.update({ content: `Resolved: ${result.reply}`, embeds: interaction.message.embeds, components: [] });
+}
+
+async function handleLfgButton(interaction: ButtonInteraction): Promise<void> {
+  const [action, idStr] = interaction.customId.split(':');
+  const postId = Number(idStr);
+
+  if (action === 'lfg_close') {
+    const post = await prisma.lfgPost.findUnique({ where: { id: postId } });
+    if (!post) {
+      await interaction.reply({ content: 'This group no longer exists.', ephemeral: true });
+      return;
+    }
+    if (interaction.user.id !== post.hostId) {
+      await interaction.reply({ content: 'Only the host can close this group.', ephemeral: true });
+      return;
+    }
+    await closeLfg(postId);
+    const updated = await prisma.lfgPost.findUniqueOrThrow({ where: { id: postId } });
+    await interaction.update({ embeds: [buildLfgEmbed(updated)], components: [buildLfgButtons(postId, true)] });
+    return;
+  }
+
+  const result = action === 'lfg_join' ? await joinLfg(postId, interaction.user.id) : await leaveLfg(postId, interaction.user.id);
+  if (!result.ok) {
+    await interaction.reply({ content: result.message, ephemeral: true });
+    return;
+  }
+
+  const updated = await prisma.lfgPost.findUniqueOrThrow({ where: { id: postId } });
+  await interaction.update({ embeds: [buildLfgEmbed(updated)], components: [buildLfgButtons(postId, updated.status !== 'open')] });
 }
 
 async function handleAppealModalSubmit(interaction: import('discord.js').ModalSubmitInteraction): Promise<void> {

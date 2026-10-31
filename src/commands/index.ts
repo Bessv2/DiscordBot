@@ -25,6 +25,14 @@ import { rankCommand } from './fun/rank';
 import { leaderboardCommand } from './fun/leaderboard';
 import { economyCommand } from './fun/economy';
 import { triviaCommand } from './fun/trivia';
+import { welcomeCommand } from './setup/welcome';
+import { birthdayCommand } from './fun/birthday';
+import { gameserverCommand } from './fun/gameserver';
+import { gamestatsCommand } from './fun/gamestats';
+import { streamwatchCommand } from './fun/streamwatch';
+import { activityroleCommand } from './fun/activityrole';
+import { lfgCommand } from './fun/lfg';
+import { tournamentCommand } from './fun/tournament';
 
 // One command = one file/module (section 8) — this is the only place they
 // get wired together, for both live command dispatch and `deploy-commands`.
@@ -55,4 +63,12 @@ export const commands: Command[] = [
   leaderboardCommand,
   economyCommand,
   triviaCommand,
+  welcomeCommand,
+  birthdayCommand,
+  gameserverCommand,
+  gamestatsCommand,
+  streamwatchCommand,
+  activityroleCommand,
+  lfgCommand,
+  tournamentCommand,
 ];
