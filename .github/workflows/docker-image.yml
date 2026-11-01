@@ -41,6 +41,9 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+      # Every command, /setup screen, button and background job against a
+      # real database and a simulated Discord (tests/e2e).
+      - run: npm run test:e2e
 
   image:
     needs: checks
