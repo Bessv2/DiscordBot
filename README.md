@@ -1,6 +1,6 @@
 # Discord Moderation Bot
 
-A self-hostable Discord moderation and utility bot. No third-party dashboard, no subscription, no cloud account holding your server's data — you run it, you own the database. See [`CLAUDE.md`](./CLAUDE.md) for the full project guidelines this bot is built against.
+A self-hostable Discord moderation and utility bot. No third-party dashboard, no subscription, no cloud account holding your server's data — you run it, you own the database. See [`PROJECT.md`](./PROJECT.md) for the full project guidelines this bot is built against.
 
 **Never set up a bot before?** Follow [Setup, step by step](#setup-step-by-step) below. It assumes no technical background. You only copy and paste, there's no coding, and it takes about 20 minutes. Already comfortable with Docker? Skip to the [short version](#short-version-for-docker-users).
 
@@ -258,7 +258,7 @@ Idle footprint on a single small guild is roughly **60-100MB RAM** and negligibl
 
 Any of these can be switched off per server from `/setup`. A switched-off feature's commands say so, and its background work (stream polling, birthday posts, reaction roles) stops for that server.
 
-See [`CLAUDE.md`](./CLAUDE.md) for what's still on the roadmap (plugin architecture, AI-assisted triage, a web dashboard, cross-server features).
+See [`PROJECT.md`](./PROJECT.md) for what's still on the roadmap (plugin architecture, AI-assisted triage, a web dashboard, cross-server features).
 
 ## Privileged intents — what's required vs. optional
 
@@ -300,7 +300,7 @@ On boot the bot validates the database is reachable/writable and that the token 
 ## Security & privacy
 
 - No telemetry or analytics. The bot itself never checks for updates. The only update checks are opt-in: the auto-updater (`COMPOSE_PROFILES=autoupdate`, daily, to GitHub's image registry) and, only with music on, yt-dlp updating itself at startup (`MUSIC_AUTO_UPDATE`).
-- Message content is only stored (truncated, attached to auto-mod hits in the mod-log) if you explicitly enable `/config wordfilter` logging behavior — see [`CLAUDE.md` §7](./CLAUDE.md#7-security--privacy-guidelines).
+- Message content is only stored (truncated, attached to auto-mod hits in the mod-log) if you explicitly enable `/config wordfilter` logging behavior — see [`PROJECT.md` §7](./PROJECT.md#7-security--privacy-guidelines).
 - Every moderation action is logged with actor, target, reason, and timestamp for your own accountability record — that data never leaves your database.
 
 ## Development

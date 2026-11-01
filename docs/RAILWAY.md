@@ -3,7 +3,7 @@
 Railway is a good fit if you'd rather not manage a VPS yourself: you connect
 this repo, Railway builds the existing `Dockerfile`, and it stays running on
 their infrastructure. This is still self-hosting in the spirit of
-`CLAUDE.md` §1 — it's **your** Railway account and **your** database, not a
+`PROJECT.md` §1 — it's **your** Railway account and **your** database, not a
 shared service this project runs — just on someone else's hardware instead
 of a Pi or a $5 VPS.
 
