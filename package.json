@@ -19,7 +19,8 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "test:e2e": "node tests/e2e/run.cjs"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",

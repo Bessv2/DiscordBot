@@ -4,6 +4,7 @@ import { logger } from '../lib/logger';
 import { prisma } from '../lib/db';
 import { startScheduler } from '../scheduler';
 import { syncCommandsIfChanged } from '../discord/commandSync';
+import { cleanupTempVoice } from '../features/tempVoice';
 
 // What the bot itself needs to carry out every feature. Kept to an explicit
 // list (not Administrator) so a host can see exactly what they're granting.
@@ -23,6 +24,11 @@ const INVITE_PERMISSIONS = [
   PermissionFlagsBits.SendPolls, // /map vote
   PermissionFlagsBits.Connect, // /music (opt-in)
   PermissionFlagsBits.Speak, // /music (opt-in)
+  PermissionFlagsBits.CreatePrivateThreads, // tickets
+  PermissionFlagsBits.SendMessagesInThreads, // tickets
+  PermissionFlagsBits.ManageThreads, // tickets: lock/archive on close
+  PermissionFlagsBits.AttachFiles, // ticket transcripts
+  PermissionFlagsBits.MoveMembers, // join-to-create voice
 ];
 
 export function ready(client: Client<true>): void {
@@ -30,6 +36,9 @@ export function ready(client: Client<true>): void {
   logInviteLink(client);
   startScheduler(client);
   void syncCommandsIfChanged(client);
+  void cleanupTempVoice(client).catch((err) =>
+    logger.warn(`Temp voice cleanup failed: ${(err as Error).message}`),
+  );
   void warnIfContentFiltersDisabled();
 }
 

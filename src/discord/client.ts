@@ -22,13 +22,15 @@ import { Command } from '../commands/types';
 // GuildVoiceStates: not privileged — lets the bot see which voice channel
 //   a member is in, so /jam and /music can join theirs. Voice states are a
 //   small cache (one entry per member currently in voice).
-// GuildModeration is not a real gateway intent; ban/kick/timeout are done
-// over the REST API and need no gateway intent at all.
+// GuildModeration: not privileged — only used to see bans and unbans done
+//   outside the bot (Discord's own menu) for the server log. The bot's own
+//   bans/kicks/timeouts go over the REST API and need no intent.
 const intents: GatewayIntentBits[] = [
   GatewayIntentBits.Guilds,
   GatewayIntentBits.GuildMessages,
   GatewayIntentBits.GuildMessageReactions,
   GatewayIntentBits.GuildVoiceStates,
+  GatewayIntentBits.GuildModeration,
 ];
 if (config.ENABLE_MESSAGE_CONTENT) {
   intents.push(GatewayIntentBits.MessageContent);

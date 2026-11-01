@@ -183,6 +183,7 @@ async function hostFacts(guildId: string): Promise<HostFacts> {
       (config.TWITCH_CLIENT_ID && config.TWITCH_CLIENT_SECRET) || config.YOUTUBE_API_KEY,
     ),
     steamOrRiot: Boolean(config.STEAM_API_KEY || config.RIOT_API_KEY),
+    prefixCommands: config.ENABLE_PREFIX_COMMANDS,
     modRoleCount: (await getConfiguredRoleIds(guildId, 'moderation')).length,
     adminRoleCount: (await getConfiguredRoleIds(guildId, 'admin')).length,
   };
@@ -194,23 +195,36 @@ async function renderMap(ctx: PanelCtx, notice?: string): Promise<Rendered> {
     .setTitle('🧭 Server setup — feature map')
     .setColor(0x5865f2)
     .setDescription(
-      `${notice ? `${notice}\n\n` : ''}${STATE_ICON.on} on · ${STATE_ICON.off} off · ${STATE_ICON.needs} on, but needs something\n` +
-        'Pick a feature below to turn it on or off and choose its channels and roles.',
+      `${notice ? `${notice}\n\n` : ''}${STATE_ICON.on} working · ${STATE_ICON.idle} not set up yet · ${STATE_ICON.off} off · ${STATE_ICON.needs} needs something\n` +
+        'Pick a feature from a menu below to turn it on or off and choose its channels and roles.',
     )
     .addFields(featureMapFields(statuses))
     .setFooter({ text: 'Changes save as soon as you make them. Nothing here is required.' });
 
-  const menu = new StringSelectMenuBuilder()
-    .setCustomId('setup:nav:open')
-    .setPlaceholder('Set up a feature…')
-    .addOptions(
-      statuses.map((s) => ({
-        label: s.name.slice(0, 100),
-        value: s.id,
-        emoji: s.emoji,
-        description: `${s.state === 'on' ? 'On' : s.state === 'off' ? 'Off' : 'Needs attention'}`,
-      })),
-    );
+  // One menu per group: a Discord menu holds at most 25 options, and there
+  // are more features than that in total.
+  const STATE_WORD = {
+    on: 'Working',
+    idle: 'Not set up yet',
+    off: 'Off',
+    needs: 'Needs attention',
+  } as const;
+  const menus = (['Moderation', 'Community', 'Games & fun'] as const).map((group, n) =>
+    new StringSelectMenuBuilder()
+      .setCustomId(`setup:nav:open:${n}`)
+      .setPlaceholder(`${['🛡️', '🏘️', '🎮'][n]} Set up: ${group}…`)
+      .addOptions(
+        statuses
+          .filter((s) => s.group === group)
+          .slice(0, 25)
+          .map((s) => ({
+            label: s.name.slice(0, 100),
+            value: s.id,
+            emoji: s.emoji,
+            description: STATE_WORD[s.state],
+          })),
+      ),
+  );
   const buttons = new ActionRowBuilder<MessageActionRowComponentBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId('setup:nav:quick')
@@ -225,7 +239,9 @@ async function renderMap(ctx: PanelCtx, notice?: string): Promise<Rendered> {
   return {
     embeds: [embed],
     components: [
-      new ActionRowBuilder<MessageActionRowComponentBuilder>().addComponents(menu),
+      ...menus.map((m) =>
+        new ActionRowBuilder<MessageActionRowComponentBuilder>().addComponents(m),
+      ),
       buttons,
     ],
   };
@@ -256,13 +272,13 @@ function navRow(quickStep: number | null): Row {
 
 async function renderDone(ctx: PanelCtx): Promise<Rendered> {
   const statuses = featureStatuses(ctx.gc, await hostFacts(ctx.guild.id));
-  const on = statuses.filter((s) => s.state !== 'off').length;
+  const on = statuses.filter((s) => s.state === 'on' || s.state === 'needs').length;
   const needs = statuses.filter((s) => s.state === 'needs');
   const embed = new EmbedBuilder()
     .setTitle('Setup saved ✅')
     .setColor(0x57f287)
     .setDescription(
-      `${on} of ${statuses.length} features are on.` +
+      `${on} of ${statuses.length} features are working.` +
         (needs.length
           ? `\n\n**Still needs attention:**\n${needs.map((s) => `${STATE_ICON.needs} ${s.emoji} ${s.name} — ${s.detail}`).join('\n')}`
           : '') +

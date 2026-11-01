@@ -1,4 +1,11 @@
-import { Client, Guild, GuildMember, PermissionFlagsBits, User } from 'discord.js';
+import {
+  Client,
+  Guild,
+  GuildMember,
+  NonThreadGuildBasedChannel,
+  PermissionFlagsBits,
+  User,
+} from 'discord.js';
 import { prisma, getOrCreateGuildConfig } from './db';
 import { checkModerationHierarchy } from './moderationGuard';
 import { createCase } from './caseManager';
@@ -13,6 +20,34 @@ import { buildAppealButtonRow } from './appealActions';
  * role with channel overwrites denying Send Messages/Speak the first time
  * it's needed, rather than requiring the host to set one up by hand.
  */
+// What a muted member can't do in a channel. Threads count too: without
+// the thread lines, a muted member could keep talking inside any thread.
+const MUTE_OVERWRITE = {
+  SendMessages: false,
+  SendMessagesInThreads: false,
+  CreatePublicThreads: false,
+  CreatePrivateThreads: false,
+  AddReactions: false,
+  Speak: false,
+  Stream: false,
+} as const;
+
+/** Applies the Muted role's restrictions to one channel. Used at role creation and for every channel created later. */
+export async function applyMuteOverwrite(
+  channel: NonThreadGuildBasedChannel,
+  roleId: string,
+): Promise<void> {
+  if (!channel.manageable) return;
+  await channel.permissionOverwrites
+    .edit(roleId, MUTE_OVERWRITE, { reason: 'Muted role: keep muted members quiet here too' })
+    .catch((err) => {
+      logger.warn(
+        `Could not set the Muted role's permissions on channel ${channel.id} in guild ${channel.guild.id}: ${(err as Error).message}`,
+        'Give the bot the Manage Channels and Manage Roles permissions (or Manage Permissions on that channel).',
+      );
+    });
+}
+
 export async function getOrCreateMuteRole(guild: Guild): Promise<string> {
   const guildConfig = await getOrCreateGuildConfig(guild.id);
   if (guildConfig.muteRoleId) {
@@ -34,12 +69,7 @@ export async function getOrCreateMuteRole(guild: Guild): Promise<string> {
 
   const channels = await guild.channels.fetch();
   for (const channel of channels.values()) {
-    if (!channel || !channel.manageable) continue;
-    await channel.permissionOverwrites
-      .edit(role, { SendMessages: false, AddReactions: false, Speak: false, Stream: false })
-      .catch((err) => {
-        logger.warn(`Could not set Muted role overwrite on channel ${channel.id} in guild ${guild.id}: ${(err as Error).message}`);
-      });
+    if (channel) await applyMuteOverwrite(channel, role.id);
   }
 
   await prisma.guildConfig.update({ where: { id: guild.id }, data: { muteRoleId: role.id } });
@@ -68,7 +98,10 @@ export async function muteMember(
     return { ok: false, message: `Discord rejected the mute: ${(err as Error).message}` };
   }
 
-  await prisma.mute.updateMany({ where: { guildId: guild.id, userId: target.id, active: true }, data: { active: false } });
+  await prisma.mute.updateMany({
+    where: { guildId: guild.id, userId: target.id, active: true },
+    data: { active: false },
+  });
   await prisma.mute.create({
     data: {
       guildId: guild.id,
@@ -95,7 +128,14 @@ export async function muteMember(
     })
     .catch(() => null);
 
-  await postModLog(guild, { type: 'mute' as const, caseNumber: record.caseNumber, target: target.user, moderator, reason, durationMs });
+  await postModLog(guild, {
+    type: 'mute' as const,
+    caseNumber: record.caseNumber,
+    target: target.user,
+    moderator,
+    reason,
+    durationMs,
+  });
 
   return {
     ok: true,
@@ -104,7 +144,12 @@ export async function muteMember(
   };
 }
 
-export async function unmuteMember(guild: Guild, target: GuildMember, moderator: User, reason: string | null): Promise<ActionResult> {
+export async function unmuteMember(
+  guild: Guild,
+  target: GuildMember,
+  moderator: User,
+  reason: string | null,
+): Promise<ActionResult> {
   if (target.id === moderator.id) return { ok: false, message: "You can't unmute yourself." };
   const guildConfig = await getOrCreateGuildConfig(guild.id);
   if (guildConfig.muteRoleId && target.roles.cache.has(guildConfig.muteRoleId)) {
@@ -112,18 +157,24 @@ export async function unmuteMember(guild: Guild, target: GuildMember, moderator:
     const removed = await target.roles.remove(guildConfig.muteRoleId, reason ?? 'Unmuted').then(
       () => true,
       (err: Error) => {
-        logger.warn(`Could not remove the mute role from ${target.id} in guild ${guild.id}: ${err.message}`);
+        logger.warn(
+          `Could not remove the mute role from ${target.id} in guild ${guild.id}: ${err.message}`,
+        );
         return false;
       },
     );
     if (!removed) {
       return {
         ok: false,
-        message: "I couldn't remove the Muted role. Move my role above **Muted** in Server Settings → Roles, then try again.",
+        message:
+          "I couldn't remove the Muted role. Move my role above **Muted** in Server Settings → Roles, then try again.",
       };
     }
   }
-  await prisma.mute.updateMany({ where: { guildId: guild.id, userId: target.id, active: true }, data: { active: false } });
+  await prisma.mute.updateMany({
+    where: { guildId: guild.id, userId: target.id, active: true },
+    data: { active: false },
+  });
 
   // Same accountability record as every other action, so /cases shows the unmute too.
   const record = await createCase({
@@ -165,7 +216,9 @@ export async function checkExpiredMutes(client: Client<true>): Promise<void> {
     if (!member) continue;
 
     await member.roles.remove(guildConfig.muteRoleId, 'Mute expired').catch((err) => {
-      logger.warn(`Could not auto-remove expired mute role for ${mute.userId} in guild ${mute.guildId}: ${(err as Error).message}`);
+      logger.warn(
+        `Could not auto-remove expired mute role for ${mute.userId} in guild ${mute.guildId}: ${(err as Error).message}`,
+      );
     });
   }
 }

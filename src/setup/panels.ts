@@ -16,6 +16,7 @@ import {
   ModalBuilder,
   ModalSubmitInteraction,
   RoleSelectMenuBuilder,
+  StringSelectMenuBuilder,
   TextInputBuilder,
   TextInputStyle,
 } from 'discord.js';
@@ -27,6 +28,10 @@ import { getModule, isModuleOn, ModuleId, setModuleOn } from '../lib/modules';
 import { getConfiguredRoleIds, setPermissionRoles } from '../lib/permissions';
 import { normalizeGame, parseMapList, MAX_MAPS_PER_GAME } from '../lib/maps';
 import { parseIntInRange, parseYesNo } from './status';
+import { parseStringList } from '../lib/jsonList';
+import { SERVER_LOG_EVENTS } from '../serverlog/events';
+import { buildTicketPanel } from '../features/tickets';
+import { buildVerifyPanel } from '../features/joinRoles';
 
 export type PanelId = ModuleId | 'modlog' | 'permissions' | 'appeals';
 type Row = ActionRowBuilder<MessageActionRowComponentBuilder>;
@@ -66,11 +71,12 @@ function channelPicker(
   action: string,
   placeholder: string,
   current: string | null,
+  types: readonly ChannelType[] = TEXT_CHANNELS,
 ): Row {
   const menu = new ChannelSelectMenuBuilder()
     .setCustomId(id(panel, action))
     .setPlaceholder(placeholder)
-    .setChannelTypes(...TEXT_CHANNELS)
+    .setChannelTypes(...(types as ChannelType[]))
     .setMinValues(1)
     .setMaxValues(1);
   if (current) menu.setDefaultChannels(current);
@@ -183,6 +189,51 @@ function readNumbers<K extends string>(
     values[key] = parsed ?? s.current;
   }
   return { values, rejected };
+}
+
+/** Section 7: member message text in logs is opt-in and expires. Shared by the auto-mod and server-log screens. */
+function textRetentionButtons(panel: PanelId, gc: GuildConfig): ButtonBuilder[] {
+  return [
+    button(
+      panel,
+      'keeptext',
+      gc.logMessageContent ? 'Keep message text: on' : 'Keep message text: off',
+    ),
+    button(panel, 'retain', `Keep it for ${gc.contentRetainDays} days…`),
+  ];
+}
+
+const TEXT_RETENTION_HELP =
+  '**Message text in logs** is off unless you turn it on. When on, the text of deleted/edited or caught messages is shown in the log, then edited out after the number of days you pick.';
+
+async function handleTextRetention(
+  i: MessageComponentInteraction,
+  action: string,
+  ctx: PanelCtx,
+): Promise<HandleResult | null> {
+  if (action === 'keeptext') {
+    await update(ctx, { logMessageContent: !ctx.gc.logMessageContent });
+    return {
+      notice: ctx.gc.logMessageContent
+        ? `Message text will be kept in logs for ${ctx.gc.contentRetainDays} days, then removed.`
+        : 'Message text is no longer kept in logs. Entries still show who, where and when.',
+    };
+  }
+  if (action === 'retain') {
+    const sub = await askForm(i, 'Keep message text for…', [
+      { id: 'days', label: 'Days (1-365)', value: String(ctx.gc.contentRetainDays), max: 3 },
+    ]);
+    if (!sub) return { modal: null };
+    const { values, rejected } = readNumbers(sub, {
+      days: { min: 1, max: 365, current: ctx.gc.contentRetainDays, label: 'days' },
+    });
+    await update(ctx, { contentRetainDays: values.days });
+    return {
+      modal: sub,
+      notice: `Message text is removed from logs after ${values.days} day(s).${keptNote(rejected)}`,
+    };
+  }
+  return null;
 }
 
 const keptNote = (rejected: string[]) =>
@@ -301,7 +352,8 @@ const panels: Record<PanelId, Panel> = {
       const embed = baseEmbed(
         ctx,
         '🛡️ Auto-mod',
-        'Deletes spam the moment it happens, even when no moderator is online, and logs each catch to the mod-log. Moderators (anyone with Manage Messages) are never filtered.',
+        'Deletes spam the moment it happens, even when no moderator is online, and logs each catch to the mod-log. Moderators (anyone with Manage Messages) are never filtered.\n\n' +
+          TEXT_RETENTION_HELP,
         gc.automodEnabled,
       ).addFields(
         {
@@ -343,11 +395,14 @@ const panels: Record<PanelId, Panel> = {
             ),
             button('automod', 'words', 'Banned words…'),
           ),
+          row(...textRetentionButtons('automod', gc)),
         ],
       };
     },
     async handle(i, action, ctx) {
       const gc = ctx.gc;
+      const retention = await handleTextRetention(i, action, ctx);
+      if (retention) return retention;
       if (action === 'toggle') {
         await update(ctx, { automodEnabled: !gc.automodEnabled });
         return { notice: `Auto-mod is now **${ctx.gc.automodEnabled ? 'on' : 'off'}**.` };
@@ -1097,6 +1152,404 @@ const panels: Record<PanelId, Panel> = {
       config.TWITCH_CLIENT_ID || config.YOUTUBE_API_KEY
         ? null
         : 'This needs a Twitch or YouTube API key from whoever runs the bot.',
+  ),
+  prefix: {
+    async render(ctx) {
+      const gc = ctx.gc;
+      const embed = baseEmbed(
+        ctx,
+        '❗ Legacy ! commands',
+        'For mods who prefer typing old-style commands: `!warn @user reason`, `!kick`, `!ban` and `!cases`. They use the same permissions and case history as the slash commands.',
+        gc.prefixCommandsOn,
+      ).addFields({ name: 'Prefix', value: `\`${gc.prefix}\``, inline: true });
+      if (!config.ENABLE_PREFIX_COMMANDS || !config.ENABLE_MESSAGE_CONTENT) {
+        embed.addFields(
+          hostNote(
+            'These need **ENABLE_PREFIX_COMMANDS=true** and **Message Content** (ENABLE_MESSAGE_CONTENT) turned on by whoever runs the bot.',
+          ),
+        );
+      }
+      return {
+        embed,
+        rows: [
+          row(
+            toggleButton('prefix', gc.prefixCommandsOn),
+            button('prefix', 'change', 'Change prefix…', ButtonStyle.Primary),
+          ),
+        ],
+      };
+    },
+    async handle(i, action, ctx) {
+      if (action === 'toggle') return { notice: await toggleModule(ctx, 'prefix') };
+      if (action === 'change') {
+        const sub = await askForm(i, 'Command prefix', [
+          {
+            id: 'prefix',
+            label: 'Prefix (1-3 characters, e.g. ! or ?)',
+            value: ctx.gc.prefix,
+            max: 3,
+          },
+        ]);
+        if (!sub) return { modal: null };
+        const prefix = sub.fields.getTextInputValue('prefix').trim();
+        if (!prefix || /\s/.test(prefix))
+          return {
+            modal: sub,
+            notice: '⚠️ The prefix must be 1-3 characters with no spaces. Nothing was saved.',
+          };
+        await update(ctx, { prefix });
+        return { modal: sub, notice: `Prefix is now \`${prefix}\`.` };
+      }
+      return {};
+    },
+  },
+
+  serverlog: {
+    async render(ctx) {
+      const gc = ctx.gc;
+      const on = isModuleOn(gc, 'serverlog');
+      const offList = parseStringList(gc.serverLogEvents);
+      const embed = baseEmbed(
+        ctx,
+        '📜 Server logs',
+        'A channel recording what happens on the server, so your mods can see who deleted a message, who left, or who changed a role, even when nobody was watching. Pick a channel only staff can see.\n\n' +
+          TEXT_RETENTION_HELP,
+        on,
+      ).addFields(
+        {
+          name: 'Log channel',
+          value: gc.serverLogChannelId
+            ? `<#${gc.serverLogChannelId}>`
+            : 'not set (pick one to start)',
+          inline: true,
+        },
+        {
+          name: 'Logging',
+          value:
+            SERVER_LOG_EVENTS.filter((e) => !offList.includes(e.key))
+              .map((e) => e.label)
+              .join('\n') || 'nothing (pick events below)',
+        },
+      );
+      const notes = [
+        !config.ENABLE_GUILD_MEMBERS &&
+          'Joins, leaves, nickname and role changes need **Server Members** (ENABLE_GUILD_MEMBERS).',
+        !config.ENABLE_MESSAGE_CONTENT &&
+          'Edited messages and the text of deleted ones need **Message Content** (ENABLE_MESSAGE_CONTENT).',
+      ].filter(Boolean);
+      if (notes.length) embed.addFields(hostNote(notes.join('\n')));
+      const events = new StringSelectMenuBuilder()
+        .setCustomId(id('serverlog', 'events'))
+        .setPlaceholder('What to log…')
+        .setMinValues(0)
+        .setMaxValues(SERVER_LOG_EVENTS.length)
+        .addOptions(
+          SERVER_LOG_EVENTS.map((e) => ({
+            label: e.label,
+            value: e.key,
+            default: !offList.includes(e.key),
+          })),
+        );
+      return {
+        embed,
+        rows: [
+          channelPicker('serverlog', 'channel', 'Pick the log channel', gc.serverLogChannelId),
+          new ActionRowBuilder<MessageActionRowComponentBuilder>().addComponents(events),
+          row(toggleButton('serverlog', on), ...textRetentionButtons('serverlog', gc)),
+        ],
+      };
+    },
+    async handle(i, action, ctx) {
+      const retention = await handleTextRetention(i, action, ctx);
+      if (retention) return retention;
+      if (action === 'toggle') return { notice: await toggleModule(ctx, 'serverlog') };
+      if (action === 'channel' && i.isChannelSelectMenu()) {
+        await update(ctx, { serverLogChannelId: i.values[0] });
+        if (!isModuleOn(ctx.gc, 'serverlog')) await toggleModule(ctx, 'serverlog');
+        return { notice: `Server logs go to <#${i.values[0]}>.` };
+      }
+      if (action === 'events' && i.isStringSelectMenu()) {
+        const off = SERVER_LOG_EVENTS.map((e) => e.key).filter((k) => !i.values.includes(k));
+        await update(ctx, { serverLogEvents: JSON.stringify(off) });
+        return {
+          notice: `Logging ${i.values.length} of ${SERVER_LOG_EVENTS.length} kinds of event.`,
+        };
+      }
+      return {};
+    },
+  },
+
+  tickets: {
+    async render(ctx) {
+      const gc = ctx.gc;
+      const on = isModuleOn(gc, 'tickets');
+      const embed = baseEmbed(
+        ctx,
+        '🎫 Support tickets',
+        "Members press a button to open a **private thread** with your staff: for reports, appeals or questions they don't want to ask in public. When it closes, a transcript is saved to a channel you pick.\n\n" +
+          '1. Pick the staff role. 2. Pick a transcript channel (optional). 3. Post the ticket button in a channel.',
+        on,
+      ).addFields(
+        {
+          name: 'Staff role',
+          value: gc.ticketStaffRoleId
+            ? `<@&${gc.ticketStaffRoleId}>`
+            : 'not set (moderators can always see tickets)',
+          inline: true,
+        },
+        {
+          name: 'Transcripts',
+          value: gc.ticketLogChannelId ? `<#${gc.ticketLogChannelId}>` : 'not saved',
+          inline: true,
+        },
+      );
+      if (!config.ENABLE_MESSAGE_CONTENT)
+        embed.addFields(
+          hostNote(
+            'Transcripts list who wrote when; the message text itself is only included with **Message Content** (ENABLE_MESSAGE_CONTENT).',
+          ),
+        );
+      return {
+        embed,
+        rows: [
+          rolePicker(
+            'tickets',
+            'staff',
+            'Staff role (who sees tickets)',
+            gc.ticketStaffRoleId ? [gc.ticketStaffRoleId] : [],
+          ),
+          channelPicker('tickets', 'log', 'Where transcripts go (optional)', gc.ticketLogChannelId),
+          channelPicker('tickets', 'post', 'Post the "Open a ticket" button in…', null, [
+            ChannelType.GuildText,
+          ]),
+          row(toggleButton('tickets', on)),
+        ],
+      };
+    },
+    async handle(i, action, ctx) {
+      if (action === 'toggle') return { notice: await toggleModule(ctx, 'tickets') };
+      if (action === 'staff' && i.isRoleSelectMenu()) {
+        await update(ctx, { ticketStaffRoleId: i.values[0] ?? null });
+        return {
+          notice: i.values[0]
+            ? `Staff role set to <@&${i.values[0]}>.`
+            : 'No staff role: moderators handle tickets.',
+        };
+      }
+      if (action === 'log' && i.isChannelSelectMenu()) {
+        await update(ctx, { ticketLogChannelId: i.values[0] });
+        return { notice: `Transcripts go to <#${i.values[0]}>.` };
+      }
+      if (action === 'post' && i.isChannelSelectMenu()) {
+        const channel = i.channels.first();
+        const ok =
+          channel && 'send' in channel
+            ? await channel.send(buildTicketPanel()).then(
+                () => true,
+                () => false,
+              )
+            : false;
+        return {
+          notice: ok
+            ? `Ticket button posted in <#${i.values[0]}>.`
+            : `⚠️ I couldn't post in <#${i.values[0]}>. Check I can send messages there.`,
+        };
+      }
+      return {};
+    },
+  },
+
+  suggestions: {
+    async render(ctx) {
+      const gc = ctx.gc;
+      const on = isModuleOn(gc, 'suggestions');
+      const embed = baseEmbed(
+        ctx,
+        '💡 Suggestions',
+        'Members post ideas with `/suggest`; they appear in a channel where everyone can vote 👍 or 👎. Staff approve or deny them with `/suggestion approve` or `/suggestion deny`, and the author gets a DM.',
+        on,
+      ).addFields({
+        name: 'Channel',
+        value: gc.suggestionChannelId
+          ? `<#${gc.suggestionChannelId}>`
+          : 'not set (pick one to start)',
+      });
+      return {
+        embed,
+        rows: [
+          channelPicker('suggestions', 'channel', 'Suggestions channel', gc.suggestionChannelId),
+          row(toggleButton('suggestions', on)),
+        ],
+      };
+    },
+    async handle(i, action, ctx) {
+      if (action === 'toggle') return { notice: await toggleModule(ctx, 'suggestions') };
+      if (action === 'channel' && i.isChannelSelectMenu()) {
+        await update(ctx, { suggestionChannelId: i.values[0] });
+        return { notice: `Suggestions go to <#${i.values[0]}>.` };
+      }
+      return {};
+    },
+  },
+
+  joinroles: {
+    async render(ctx) {
+      const gc = ctx.gc;
+      const on = isModuleOn(gc, 'joinroles');
+      const joinRoles = parseStringList(gc.joinRoleIds);
+      const embed = baseEmbed(
+        ctx,
+        '✅ Join roles & verification',
+        '**Join roles** are given to everyone the moment they join (e.g. a Member role).\n' +
+          '**Verification** keeps new accounts out of most channels until they press a **Verify** button, which stops most spam bots. Give the verified role access to your channels, and post the button in a channel newcomers can see.',
+        on,
+      ).addFields(
+        {
+          name: 'Join roles',
+          value: joinRoles.length ? joinRoles.map((r) => `<@&${r}>`).join(' ') : 'none',
+          inline: true,
+        },
+        {
+          name: 'Verified role',
+          value: gc.verifyRoleId ? `<@&${gc.verifyRoleId}>` : 'none',
+          inline: true,
+        },
+      );
+      if (!config.ENABLE_GUILD_MEMBERS)
+        embed.addFields(
+          hostNote(
+            'Join roles need **Server Members** (ENABLE_GUILD_MEMBERS) to see people join. The Verify button works without it.',
+          ),
+        );
+      return {
+        embed,
+        rows: [
+          rolePicker('joinroles', 'join', 'Roles everyone gets on joining (up to 5)', joinRoles, 5),
+          rolePicker(
+            'joinroles',
+            'verify',
+            'Role the Verify button gives',
+            gc.verifyRoleId ? [gc.verifyRoleId] : [],
+          ),
+          channelPicker('joinroles', 'post', 'Post the Verify button in…', null, [
+            ChannelType.GuildText,
+          ]),
+          row(toggleButton('joinroles', on)),
+        ],
+      };
+    },
+    async handle(i, action, ctx) {
+      if (action === 'toggle') return { notice: await toggleModule(ctx, 'joinroles') };
+      if ((action === 'join' || action === 'verify') && i.isRoleSelectMenu()) {
+        // The bot hands these out to anyone, so the usual rule applies: never above the person setting it up.
+        for (const role of i.roles.values()) {
+          const ok = await checkRoleAssignable(ctx.guild, ctx.invoker, role);
+          if (!ok.allowed) return { notice: `⚠️ <@&${role.id}>: ${ok.reason}` };
+        }
+        if (action === 'join') {
+          await update(ctx, { joinRoleIds: JSON.stringify(i.values) });
+          return {
+            notice: i.values.length
+              ? `New members get ${i.values.map((r) => `<@&${r}>`).join(' ')}.`
+              : 'No join roles.',
+          };
+        }
+        await update(ctx, { verifyRoleId: i.values[0] ?? null });
+        return {
+          notice: i.values[0]
+            ? `The Verify button gives <@&${i.values[0]}>. Now post it in a channel.`
+            : 'No verified role.',
+        };
+      }
+      if (action === 'post' && i.isChannelSelectMenu()) {
+        if (!ctx.gc.verifyRoleId) return { notice: '⚠️ Pick the verified role first.' };
+        const channel = i.channels.first();
+        const ok =
+          channel && 'send' in channel
+            ? await channel.send(buildVerifyPanel()).then(
+                () => true,
+                () => false,
+              )
+            : false;
+        return {
+          notice: ok
+            ? `Verify button posted in <#${i.values[0]}>.`
+            : `⚠️ I couldn't post in <#${i.values[0]}>.`,
+        };
+      }
+      return {};
+    },
+  },
+
+  tempvoice: {
+    async render(ctx) {
+      const gc = ctx.gc;
+      const on = isModuleOn(gc, 'tempvoice');
+      const embed = baseEmbed(
+        ctx,
+        '🔊 Join-to-create voice',
+        'Instead of a pile of empty voice channels: members join one "hub" channel and get their own room in the same category, which they can rename, limit or lock with `/voice`. Rooms are deleted when everyone leaves.',
+        on,
+      ).addFields({
+        name: 'Hub channel',
+        value: gc.tempVoiceHubId
+          ? `<#${gc.tempVoiceHubId}>`
+          : 'not set (pick a voice channel, e.g. "➕ Join to create")',
+      });
+      return {
+        embed,
+        rows: [
+          channelPicker(
+            'tempvoice',
+            'hub',
+            'Pick the join-to-create voice channel',
+            gc.tempVoiceHubId,
+            [ChannelType.GuildVoice],
+          ),
+          row(toggleButton('tempvoice', on)),
+        ],
+      };
+    },
+    async handle(i, action, ctx) {
+      if (action === 'toggle') return { notice: await toggleModule(ctx, 'tempvoice') };
+      if (action === 'hub' && i.isChannelSelectMenu()) {
+        await update(ctx, { tempVoiceHubId: i.values[0] });
+        return { notice: `Joining <#${i.values[0]}> now makes a room.` };
+      }
+      return {};
+    },
+  },
+
+  giveaways: simplePanel(
+    'giveaways',
+    '🎉 Giveaways',
+    'Members enter with a button; winners are drawn and announced automatically when time is up, even after a restart.',
+    [
+      '`/giveaway start prize:Nitro duration:2d winners:1`',
+      '`/giveaway end`, `/giveaway reroll` and `/giveaway list`',
+    ],
+  ),
+  autoresponders: simplePanel(
+    'autoresponders',
+    '🤖 Auto-responders',
+    'The bot replies by itself when a message contains a trigger phrase: answer "how do I join the server?" once and never again. Each trigger replies at most once every 30 seconds per channel.',
+    [
+      '`/autoresponder add trigger:how do i join response:Use the IP play.example.com`',
+      '`/autoresponder list` and `/autoresponder remove`',
+    ],
+    () =>
+      config.ENABLE_MESSAGE_CONTENT
+        ? null
+        : 'This needs **Message Content** (ENABLE_MESSAGE_CONTENT) to read messages.',
+  ),
+  announcements: simplePanel(
+    'announcements',
+    '📣 Announcements',
+    'Post a styled announcement now, later, or every day or week: event reminders, weekly rules posts, game night.',
+    [
+      '`/announce send channel:#news message:... in:2h repeat:weekly`',
+      '`/announce list` and `/announce cancel`',
+    ],
   ),
   activityroles: simplePanel(
     'activityroles',
