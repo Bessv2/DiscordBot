@@ -53,18 +53,21 @@ jobs:
       packages: write
     strategy:
       fail-fast: false
+      # latest/music follow main itself, not "the default branch": if the
+      # repo's default branch is ever something else, {{is_default_branch}}
+      # is false on main and those tags are silently never published.
       matrix:
         include:
           - variant: standard
             music: 'false'
             tags: |
-              type=raw,value=latest,enable={{is_default_branch}}
+              type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
               type=semver,pattern={{version}}
               type=sha
           - variant: music
             music: 'true'
             tags: |
-              type=raw,value=music,enable={{is_default_branch}}
+              type=raw,value=music,enable=${{ github.ref == 'refs/heads/main' }}
               type=semver,pattern={{version}},suffix=-music
               type=sha,suffix=-music
     steps:

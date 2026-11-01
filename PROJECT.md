@@ -180,7 +180,7 @@ Also in place: the bot never pings `@everyone`, `@here` or roles on anyone's beh
 - **Everything in Core, v1.x, Fun/Game and the all-in-one assistant set is built** (PR #1, PR #3 merged; the assistant set in the PR after #5). 52 slash commands, 117 including subcommands; 30 modules that can be switched off per server.
 - **Web dashboard** (optional, off by default) built on top: the same settings as `/setup` plus the case history, in a browser.
 - **Checks:** 141 unit tests; the end-to-end check (§15) passes 237/237 (241/241 with music on) and runs in CI on every PR.
-- **Images published:** the first `main` build pushed `ghcr.io/bessv2/discordbot:latest` and `:music` (amd64 + arm64) on 2026-10-31.
+- **Images published:** `main` builds pushed only `sha-…` tags, not `:latest` / `:music`: those were gated on `{{is_default_branch}}`, and the repo's default branch isn't `main` yet, so `docker compose up -d` failed with `not found`. Fixed 2026-11-01 by tying them to `refs/heads/main`; they appear with the next push to `main`.
 - **Not yet verified against live Discord:** voice playback for `/music`, launching Watch Together from `/jam`, a host pulling the published images, and the dashboard behind a real reverse proxy. Everything else was exercised end to end against a simulated Discord, not a real one.
 - **Owner to-dos (GitHub settings, can't be done from code):**
   - [ ] Set the repo's default branch to `main` (Settings → General).
@@ -360,6 +360,7 @@ Decisions already made, so they don't get relitigated. Newest last.
 - **2026-11-01 — Web dashboard runs inside the bot, off by default.** No second container or service; express is only loaded when `ENABLE_DASHBOARD=true`. Server-rendered forms with no JavaScript, so there's no front-end build and nothing for a CSP to let through.
 - **2026-11-01 — Dashboard sign-in is a one-time link from `/dashboard`, not Discord OAuth.** OAuth would need the host to register a redirect URL and keep a client secret, and only works on a fixed public address; a link from an ephemeral slash-command reply proves who the person is and that they're an admin, with nothing to configure. Sessions live in memory (a restart signs everyone out) and need no schema change.
 - **2026-11-01 — The dashboard is local-only by default** (127.0.0.1, and compose publishes on 127.0.0.1). Remote access is the host's explicit choice: SSH tunnel, VPN, or an HTTPS reverse proxy with `DASHBOARD_URL`.
+- **2026-11-01 — `latest` / `music` image tags follow `main` itself** (`github.ref == 'refs/heads/main'`), not `{{is_default_branch}}`, so they can't silently go missing when the default branch is something else.
 - **2026-11-01 — `/setup` has one menu per group** (Moderation, Community, Games & fun), because a Discord menu holds at most 25 options and there are now 33 features.
 
 ## 17. Known Gaps & Open Items
