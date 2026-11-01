@@ -4,6 +4,8 @@ A self-hostable Discord moderation and utility bot. No third-party dashboard, no
 
 **Never set up a bot before?** Follow [Setup, step by step](#setup-step-by-step) below. It assumes no technical background. You only copy and paste, there's no coding, and it takes about 20 minutes. Already comfortable with Docker? Skip to the [short version](#short-version-for-docker-users).
 
+**Already running it?** To update, run `docker compose pull` and then `docker compose up -d` in the bot folder. See [Updating to a new version](#updating-to-a-new-version).
+
 ## Setup, step by step
 
 **What you need:**
@@ -147,20 +149,43 @@ Your data (settings, case history, levels, and so on) lives in the `data` folder
 
 ## Updating to a new version
 
-New versions are published as ready-made images, so updating never means downloading the bot again or rebuilding it. Your settings and data stay where they are.
-
-**Automatic (recommended):** in `.env`, set `COMPOSE_PROFILES=autoupdate`, then run `docker compose up -d` once. From then on, the bot checks for a new version once a day at 04:00 and installs it by itself, with a quick restart. It's off unless you turn it on, because it means your computer checks GitHub daily. To turn it off again, empty that line and run `docker compose up -d`.
-
-**By hand, whenever you like:** open a terminal in the bot folder and run:
+**The short answer:** open a terminal in the bot folder and run these two lines:
 
 ```
 docker compose pull
 docker compose up -d
 ```
 
-The first line downloads the new version, and the second restarts the bot on it.
+The first line downloads the newest version of the bot, and the second restarts the bot on it. Your settings, case history and everything else in the `data` folder stay exactly as they are. Database changes and new slash commands are applied by themselves when the bot starts.
 
-Either way, database changes are applied automatically and slash commands update by themselves. See [`docs/UPGRADING.md`](./docs/UPGRADING.md) for details. Occasionally a release also needs a new file from this repo, such as a new `docker-compose.yml`. When that happens, the release notes say so.
+### Step by step
+
+1. **Open a terminal in the bot folder**, the same way as in [step 4](#step-4--give-the-bot-its-token). It has to be the folder that contains `docker-compose.yml`.
+2. **Back up first (recommended, takes seconds).** Copy the `data` folder somewhere safe, for example to your desktop. On Mac or Linux you can run `./scripts/backup-db.sh` instead, which saves a dated copy in `backups/`. If an update ever goes wrong, putting that folder back undoes it (see [`docs/BACKUP.md`](./docs/BACKUP.md)).
+3. **Download and restart:**
+   ```
+   docker compose pull
+   docker compose up -d
+   ```
+   If there's nothing new, `pull` says the image is up to date and `up -d` leaves the bot running as it was.
+4. **Check it came back:** run `docker compose logs --tail 30 bot` (or open the bot's **Logs** tab in Docker Desktop) and look for `Logged in as`.
+
+This works the same for the music image (`BOT_IMAGE_TAG=music`): `pull` downloads whichever one your `.env` picks.
+
+### Or let it update itself
+
+In `.env`, set `COMPOSE_PROFILES=autoupdate`, then run `docker compose up -d` once. From then on, the bot checks for a new version once a day at 04:00 and installs it by itself, with a quick restart. It's off unless you turn it on, because it means your computer checks GitHub daily. To turn it off again, empty that line and run `docker compose up -d`.
+
+### When a release changes the bot's files
+
+Most updates are just the image above. Occasionally a release also changes `docker-compose.yml` or adds new settings to `.env.example`, and the release notes say so. Then, before running the two lines:
+
+- **Downloaded as a ZIP:** download the ZIP again and copy only the new `docker-compose.yml` into your bot folder, replacing the old one. **Keep your own `.env` and `data` folder.** Copy any new lines you want from the new `.env.example` into your `.env`.
+- **Used git:** run `git pull` first. Your `.env` and `data` folder aren't tracked by git, so they're never touched.
+
+**Built it from source instead of using the ready-made image?** Update with `git pull`, then `docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build`.
+
+More detail, including running without Docker, is in [`docs/UPGRADING.md`](./docs/UPGRADING.md).
 
 ## Troubleshooting
 
@@ -169,7 +194,7 @@ Either way, database changes are applied automatically and slash commands update
 | `docker` is not recognized / `command not found` | Docker Desktop isn't installed, or the terminal was opened before you installed it. Close the terminal, make sure Docker Desktop is open, and open a new terminal. |
 | `Cannot connect to the Docker daemon`, or `error during connect` | Docker Desktop isn't running. Open it and wait for **Engine running**, then try again. |
 | `env file ... .env not found` | You haven't made `.env` yet, or it isn't in the bot folder. Redo step 4. On Windows, make sure Notepad didn't save it as `.env.txt`. |
-| `manifest unknown`, `denied`, or `pull access denied` for `ghcr.io/bessv2/discordbot` | The ready-made image isn't published yet (or your `BOT_IMAGE_TAG` is misspelled). Build it yourself instead: `docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build`. |
+| `manifest unknown`, `denied`, or `pull access denied` for `ghcr.io/bessv2/discordbot` (when starting or updating) | The ready-made image isn't published or public yet (or your `BOT_IMAGE_TAG` is misspelled). Build it yourself instead: `docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build`. |
 | `no configuration file provided: not found` | The terminal isn't in the bot folder. Open the terminal from the folder that contains `docker-compose.yml` (step 4). |
 | Log says `DISCORD_TOKEN: DISCORD_TOKEN is required` | The token line in `.env` is empty or wasn't saved. Paste the token again and save. Then run `docker compose up -d` to restart. |
 | Log says `Discord rejected the bot token` | The token is wrong or was reset. Copy a fresh one from the **Bot** tab (**Reset Token**), not the "Client Secret" on the OAuth2 tab. Put it in `.env`, then run `docker compose up -d`. |
@@ -192,6 +217,7 @@ Still stuck? Open an issue with what you did and the last ~20 lines of the log. 
 4. `docker compose up -d` (pulls `ghcr.io/bessv2/discordbot:latest`; add `-f docker-compose.build.yml --build` to build from source instead)
 5. `docker compose logs bot`, then open the invite link it prints. It requests `bot` + `applications.commands` with only the permissions the bot uses.
 6. Move the bot's role above the roles it should moderate, then run `/setup` in your server.
+7. To update later: `docker compose pull && docker compose up -d` (or set `COMPOSE_PROFILES=autoupdate` to do it daily). `git pull` first when a release changes `docker-compose.yml`.
 
 Slash commands are registered automatically on startup whenever their definitions change (global by default; set `DISCORD_GUILD_ID` to register in one guild instantly). Migrations run automatically from the container entrypoint. Images are multi-arch (amd64, arm64) and rebuilt by GitHub Actions on every push to `main` and weekly; `COMPOSE_PROFILES=autoupdate` adds a pinned, label-scoped [Watchtower](https://github.com/nicholas-fedor/watchtower) that only updates this container.
 
