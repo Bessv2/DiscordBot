@@ -25,6 +25,7 @@ process.env.ENABLE_GUILD_MEMBERS = 'true';
 process.env.ENABLE_PRESENCE = 'false';
 process.env.ENABLE_PREFIX_COMMANDS = 'true';
 process.env.ENABLE_MUSIC = MUSIC ? 'true' : 'false';
+process.env.ENABLE_DASHBOARD = 'true';
 process.env.LOG_LEVEL = 'info';
 // The command-sync hash lives in data/; point it away from the real one.
 const realHash = path.join(ROOT, 'data', '.commands-hash');
@@ -1026,6 +1027,88 @@ async function emitMessage(raw) {
       await fake.settle();
       check('the room is deleted when it empties', fake.callsSince(mark).some((c) => c.kind === 'channelDelete') && (await prisma.tempVoiceChannel.count()) === 0);
     }
+    takeLog();
+  }
+
+  heading('Web dashboard (over real HTTP)');
+  {
+    const http = require('node:http');
+    const { createApp } = require(`${ROOT}/dist/dashboard/server`);
+    const { createLoginToken } = require(`${ROOT}/dist/dashboard/auth`);
+    const { isModuleEnabledForGuild } = require(`${ROOT}/dist/lib/modules`);
+    const srv = http.createServer(createApp(client));
+    await new Promise((res) => srv.listen(0, '127.0.0.1', res));
+    const base = `http://127.0.0.1:${srv.address().port}`;
+    const get = (p, cookie) => fetch(base + p, { redirect: 'manual', headers: cookie ? { cookie } : {} });
+    const post = (p, cookie, form) =>
+      fetch(base + p, { method: 'POST', redirect: 'manual', headers: { cookie: cookie ?? '', 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(form) });
+    const gcNow = () => prisma.guildConfig.findUnique({ where: { id: IDS.guild } });
+
+    let d = await cmd('dashboard', { user: IDS.user });
+    check('/dashboard is refused for regular members', /permission/i.test(d.text) && !/login\?t=/.test(d.text), d.text);
+    d = await cmd('dashboard', { user: IDS.admin });
+    const token = (d.text.match(/login\?t=([\w-]+)/) || [])[1];
+    check('/dashboard gives an admin a private one-time link', token && JSON.stringify(d.calls).includes('"flags":64'), d.text + errText(d));
+
+    let res = await get('/');
+    check('without signing in, nothing is shown', res.status === 401);
+    res = await get(`/login?t=${token}`);
+    const setCookie = res.headers.get('set-cookie') || '';
+    const cookie = setCookie.split(';')[0];
+    check('the link signs you in and takes the token off the URL', res.status === 303 && res.headers.get('location') === '/' && /HttpOnly/.test(setCookie) && /SameSite=Lax/.test(setCookie), `${res.status} ${setCookie}`);
+    res = await get(`/login?t=${token}`);
+    check('the same link does not work twice', res.status === 401);
+
+    res = await get('/', cookie);
+    let html = await res.text();
+    check('the feature map loads with every group', res.status === 200 && /Moderation/.test(html) && /Community/.test(html) && /Games &amp; fun/.test(html), `${res.status}`);
+    check('pages are sent with a strict security policy', /default-src 'none'/.test(res.headers.get('content-security-policy') || '') && res.headers.get('x-frame-options') === 'DENY' && res.headers.get('referrer-policy') === 'no-referrer' && !res.headers.get('x-powered-by'));
+    const csrf = (html.match(/name="csrf" value="([^"]+)"/) || [])[1];
+
+    const triviaBefore = await isModuleEnabledForGuild(IDS.guild, 'trivia');
+    res = await post('/toggle/trivia', cookie, { csrf: 'forged' });
+    check('a form without the right CSRF token is refused', res.status === 403 && (await isModuleEnabledForGuild(IDS.guild, 'trivia')) === triviaBefore);
+    res = await post('/toggle/trivia', cookie, { csrf });
+    check('a feature can be switched off and on', res.status === 303 && (await isModuleEnabledForGuild(IDS.guild, 'trivia')) === !triviaBefore);
+    d = await cmd('trivia', { sub: 'start', user: IDS.user });
+    check('...and Discord sees the change straight away', triviaBefore ? /off/i.test(d.text) : true, d.text);
+    await post('/toggle/trivia', cookie, { csrf });
+
+    const modlogBefore = (await gcNow()).modLogChannelId;
+    res = await post('/f/modlog', cookie, { csrf, modLogChannelId: '123456789012345678' });
+    check('a channel that is not on the server is refused', res.status === 400 && (await gcNow()).modLogChannelId === modlogBefore && /isn&#39;t on this server/.test(await res.text()));
+    res = await post('/f/automod', cookie, { csrf, spamMessageLimit: '7', spamIntervalMs: '9', mentionSpamLimit: '6', inviteFilterOn: 'on', bannedWords: 'Alpha\nbeta', logMessageContent: 'on', contentRetainDays: '14' });
+    let gc = await gcNow();
+    check('saving settings writes them (with seconds stored as ms)', res.status === 303 && gc.spamMessageLimit === 7 && gc.spamIntervalMs === 9000 && gc.inviteFilterOn && !gc.wordFilterOn && gc.bannedWords === '["alpha","beta"]' && gc.contentRetainDays === 14, JSON.stringify({ s: res.status, l: gc.spamMessageLimit }));
+    res = await post('/f/automod', cookie, { csrf, spamMessageLimit: '999', spamIntervalMs: '9', mentionSpamLimit: '6', contentRetainDays: '14' });
+    check('out-of-range numbers are refused and nothing is saved', res.status === 400 && (await gcNow()).spamMessageLimit === 7 && (await gcNow()).inviteFilterOn);
+
+    res = await post('/f/joinroles', cookie, { csrf, joinRoleIds: IDS.rHigh, verifyRoleId: '' });
+    check('a join role above your own role is refused', res.status === 400 && /above/.test(await res.text()));
+    res = await post('/f/joinroles', cookie, { csrf, joinRoleIds: IDS.rMember, verifyRoleId: IDS.rReward });
+    gc = await gcNow();
+    check('join roles and the verified role save', res.status === 303 && gc.joinRoleIds === JSON.stringify([IDS.rMember]) && gc.verifyRoleId === IDS.rReward);
+
+    res = await post('/f/permissions', cookie, { csrf, perm_moderation: [IDS.rMod], perm_admin: [IDS.rAdmin] });
+    const permRows = await prisma.permissionRole.findMany({ where: { guildId: IDS.guild } });
+    check('permission roles save', res.status === 303 && permRows.some((p) => p.scope === 'moderation' && p.roleId === IDS.rMod) && permRows.some((p) => p.scope === 'admin' && p.roleId === IDS.rAdmin));
+
+    const xss = '</textarea><script>alert(1)</script>';
+    res = await post('/f/welcome', cookie, { csrf, welcomeChannelId: IDS.welcome, welcomeMessage: xss, goodbyeChannelId: '', goodbyeMessage: 'Bye {user}' });
+    html = await (await get('/f/welcome', cookie)).text();
+    check('member-written text is shown escaped, never as HTML', res.status === 303 && (await gcNow()).welcomeMessage === xss && !html.includes('<script>alert') && html.includes('&lt;/textarea&gt;&lt;script&gt;'));
+
+    html = await (await get('/cases?q=troy', cookie)).text();
+    check('the case history is searchable', /troy_target/.test(html) && /<td>#\d+<\/td>/.test(html));
+
+    const memberLink = createLoginToken(IDS.user, IDS.guild);
+    const memberCookie = ((await get(`/login?t=${memberLink}`)).headers.get('set-cookie') || '').split(';')[0];
+    res = await get('/', memberCookie);
+    check('a session for someone without admin rights is refused and ended', res.status === 403 && (await get('/', memberCookie)).status === 401);
+
+    res = await post('/logout', cookie, { csrf });
+    check('signing out ends the session', res.status === 200 && (await get('/', cookie)).status === 401);
+    await new Promise((r2) => srv.close(r2));
     takeLog();
   }
 

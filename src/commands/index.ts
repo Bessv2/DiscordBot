@@ -42,6 +42,7 @@ import { lockCommand, unlockCommand } from './moderation/lock';
 import { unbanCommand } from './moderation/unban';
 import { roleCommand } from './moderation/role';
 import { helpCommand } from './utility/help';
+import { dashboardCommand } from './setup/dashboard';
 import { ticketCommand } from './community/ticket';
 import { giveawayCommand } from './community/giveaway';
 import { suggestCommand, suggestionCommand } from './community/suggest';
@@ -97,6 +98,7 @@ export const commands: Command[] = [
   unbanCommand,
   roleCommand,
   helpCommand,
+  dashboardCommand,
   ticketCommand,
   giveawayCommand,
   suggestCommand,

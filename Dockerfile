@@ -22,6 +22,10 @@ RUN npm run build
 
 FROM base AS runtime
 ENV NODE_ENV=production
+# Inside a container the dashboard (if turned on) must listen on all of the
+# container's interfaces; which of the host's addresses it is reachable on is
+# decided by the port mapping in docker-compose.yml (127.0.0.1 only).
+ENV DASHBOARD_HOST=0.0.0.0
 # Links the published image to this repo on GitHub's container registry.
 LABEL org.opencontainers.image.source="https://github.com/Bessv2/DiscordBot" \
       org.opencontainers.image.description="Self-hosted Discord moderation and community bot"

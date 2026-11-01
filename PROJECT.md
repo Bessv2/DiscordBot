@@ -123,7 +123,7 @@ All of these can be switched off per server from `/setup`; a host running a pure
 
 - [ ] Optional AI-assisted triage — flag likely-toxic messages for human review (never auto-action without a human-in-the-loop toggle)
 - [ ] Plugin architecture so a host can drop in a custom command/module without forking core
-- [ ] Web dashboard (self-hosted, same box) as an alternative to slash-command config — explicitly optional, bot must be fully usable without it
+- [x] Web dashboard (self-hosted, same box) as an alternative to slash-command config — explicitly optional, bot must be fully usable without it. Built 2026-11-01: `ENABLE_DASHBOARD`, sign-in by one-time link from `/dashboard` (see §10, §16)
 - [ ] Cross-server ban-list sharing for trusted server networks (opt-in, host-controlled trust list — never a shared cloud service by default)
 - [ ] Cross-server announcement broadcasting for server networks (opt-in, distinct from the ban-list sharing above)
 - [ ] Audit-log export (CSV/JSON) for servers that need compliance records
@@ -160,6 +160,8 @@ What has to exist before this counts as "actually self-hostable," not just runna
 - If AI-assisted moderation ships, message content sent to an external API must be opt-in, clearly disclosed in docs, and the host must supply their own API key — never proxied through a service the project runs.
 - No phone-home telemetry, analytics, or update-check pinging without an explicit, off-by-default opt-in the host can see in the config. The only network calls besides Discord and the integrations a host configures are both opt-in: the auto-updater (`COMPOSE_PROFILES=autoupdate`) and yt-dlp updating itself (only with music on, `MUSIC_AUTO_UPDATE`). Prisma's CLI update check is switched off (`CHECKPOINT_DISABLE=1`).
 
+Web dashboard (opt-in): listens on 127.0.0.1 unless the host changes it; no passwords (one-time `/dashboard` links, 10 minutes, single use); sessions are in memory and bound to one person and one server; admin rights are re-checked against Discord on every request; CSRF token on every form; `HttpOnly`, `SameSite=Lax` cookie (`Secure` with an https `DASHBOARD_URL`); no scripts and a `default-src 'none'` Content-Security-Policy; every Discord- or member-supplied string is escaped; submitted channel and role IDs must exist on that server, and roles the bot hands out pass the same hierarchy check as in Discord.
+
 Also in place: the bot never pings `@everyone`, `@here` or roles on anyone's behalf (`allowedMentions: users` client-wide); members can't moderate or hand out roles at or above their own highest role, or above the bot's; `/music` only fetches YouTube URLs (no arbitrary URLs, so it can't be pointed at the host's network) and passes queries after `--` so they can't become yt-dlp flags.
 
 ## 8. Contribution & Coding Standards
@@ -175,10 +177,11 @@ Also in place: the bot never pings `@everyone`, `@here` or roles on anyone's beh
 
 ## 9. Current Status (2026-11-01)
 
-- **Everything in Core, v1.x, Fun/Game and the all-in-one assistant set is built** (PR #1, PR #3 merged; the assistant set in the PR after #5). 51 slash commands, 116 including subcommands; 30 modules that can be switched off per server.
-- **Checks:** 129 unit tests; the end-to-end check (§15) passes 217/217 (221/221 with music on) and now runs in CI on every PR.
+- **Everything in Core, v1.x, Fun/Game and the all-in-one assistant set is built** (PR #1, PR #3 merged; the assistant set in the PR after #5). 52 slash commands, 117 including subcommands; 30 modules that can be switched off per server.
+- **Web dashboard** (optional, off by default) built on top: the same settings as `/setup` plus the case history, in a browser.
+- **Checks:** 141 unit tests; the end-to-end check (§15) passes 237/237 (241/241 with music on) and runs in CI on every PR.
 - **Images published:** the first `main` build pushed `ghcr.io/bessv2/discordbot:latest` and `:music` (amd64 + arm64) on 2026-10-31.
-- **Not yet verified against live Discord:** voice playback for `/music`, launching Watch Together from `/jam`, and a host pulling the published images. Everything else was exercised end to end against a simulated Discord, not a real one.
+- **Not yet verified against live Discord:** voice playback for `/music`, launching Watch Together from `/jam`, a host pulling the published images, and the dashboard behind a real reverse proxy. Everything else was exercised end to end against a simulated Discord, not a real one.
 - **Owner to-dos (GitHub settings, can't be done from code):**
   - [ ] Set the repo's default branch to `main` (Settings → General).
   - [ ] Make the repo public, so others can download it.
@@ -200,7 +203,9 @@ src/
   features/           tickets, giveaways, suggestions, joinRoles (+ Verify), autoResponders,
                       announcements, tempVoice: the logic and buttons behind the community commands
   serverlog/          events.ts (event kinds, switches, posting) and handlers.ts (one per Discord event)
-  setup/              /setup feature map: status.ts (pure status logic) and panels.ts (one screen per feature)
+  setup/              /setup feature map: status.ts (pure status logic), hostFacts.ts, and panels.ts (one screen per feature)
+  dashboard/          optional web dashboard: fields.ts (what each page edits + pure validation), auth.ts (sign-in
+                      links, sessions), render.ts (HTML), server.ts (express routes), url.ts
   lib/                shared logic: db, logger, permissions, modules (registry + on/off), caseManager,
                       modlog, moderationActions/Guard, muteActions, raidActions/Guard, appealActions,
                       xp, economy/walletActions, starboard, reactionRoles, activityRoles, lfgActions,
@@ -227,6 +232,8 @@ docs/                 BACKUP, UPGRADING, TESTING, RAILWAY
 **`/setup`.** Opens on a feature map (`setup/status.ts` decides ✅/⬜/⚠️ from the server's settings plus host facts such as which intents are on). Each feature has a panel in `setup/panels.ts` with pickers, toggles and small forms; quick start walks modlog → automod → permissions. State lives only in the message collector (15-minute life), so there's nothing to clean up after a restart.
 
 **Command registration.** On every start, `commandSync.ts` hashes the command definitions plus the application ID and target (global, or one guild if `DISCORD_GUILD_ID` is set) and only calls Discord when the hash differs from `data/.commands-hash`.
+
+**Web dashboard.** Off unless `ENABLE_DASHBOARD=true`; `index.ts` then imports `dashboard/server.ts` (and with it express) and listens on `DASHBOARD_HOST:DASHBOARD_PORT`. `/dashboard` makes a one-time token (in memory) and replies ephemerally with `DASHBOARD_URL/login?t=…`; opening it starts a 12-hour session for that user and server and redirects to `/`. Every other route goes through one middleware that loads the session, fetches the member from Discord and runs the same admin gate as `/setup`, and checks the CSRF token on POSTs. Pages: the feature map with on/off buttons (`setModuleOn`, the same code as `/setup`), one settings form per feature built from `PAGES` in `fields.ts`, and `/cases`. Saving validates every field first (`parseField`, pure) and writes nothing if any is wrong. No database changes: it reads and writes the same `GuildConfig` and `permission_roles` rows.
 
 **Music.** `/jam` only creates a Watch Together invite. `/music` dynamically imports `music/player.ts` (and with it `@discordjs/voice`) only when `ENABLE_MUSIC=true`. Per server: one voice connection, a queue (max 200), and a `yt-dlp → ffmpeg → Ogg/Opus` pipeline per track; it leaves after 5 minutes idle or when the channel has had no humans for two 30-second checks.
 
@@ -268,6 +275,7 @@ Scope is the permission gate's scope; the bracket is the Discord permission used
 | `/unban`                                                     | —                                                                                                    | moderation (Ban Members)                   | core                  |
 | `/role`                                                      | add, remove                                                                                          | moderation (Manage Roles)                  | core                  |
 | `/help`                                                      | — (command)                                                                                          | utility                                    | core                  |
+| `/dashboard`                                                 | —                                                                                                    | admin (Manage Server)                      | core                  |
 | `/ticket`                                                    | panel, close, add, remove                                                                            | utility (panel: admins; add/remove: staff) | tickets               |
 | `/giveaway`                                                  | start, end, reroll, list                                                                             | moderation (Manage Server)                 | giveaways             |
 | `/suggest`                                                   | — (idea)                                                                                             | utility                                    | suggestions           |
@@ -282,32 +290,36 @@ Legacy prefix commands (`!warn`, `!kick`, `!ban`, `!cases`) exist behind `ENABLE
 
 Host-level settings live in `.env` (documented line by line in `.env.example`); everything per-server is set in Discord. Only `DISCORD_TOKEN` is required.
 
-| Variable                                                      | Default                  | What it does                                                            |
-| ------------------------------------------------------------- | ------------------------ | ----------------------------------------------------------------------- |
-| `DISCORD_TOKEN`                                               | — (required)             | Bot token from the Developer Portal → Bot. Trimmed of stray whitespace. |
-| `DISCORD_CLIENT_ID`                                           | looked up from the token | Only kept for older setups / `deploy-commands`.                         |
-| `DISCORD_GUILD_ID`                                            | empty (global commands)  | Developers: register commands in one server instantly.                  |
-| `DATABASE_URL`                                                | `file:../data/bot.db`    | Relative to `prisma/`, so it lands in `./data` (§16).                   |
-| `ENABLE_MESSAGE_CONTENT`                                      | false                    | Privileged intent: invite/word filters, mention spam, prefix commands.  |
-| `ENABLE_PREFIX_COMMANDS`, `PREFIX`                            | false, `!`               | Legacy `!` commands.                                                    |
-| `ENABLE_GUILD_MEMBERS`                                        | false                    | Privileged intent: welcome/goodbye, anti-raid, birthday-role cleanup.   |
-| `ENABLE_PRESENCE`                                             | false                    | Privileged intent: `/activityrole`.                                     |
-| `ENABLE_MUSIC`                                                | false                    | Turns on `/music` (needs the `music` image, or ffmpeg + yt-dlp).        |
-| `MUSIC_AUTO_UPDATE`                                           | true                     | With music on, update yt-dlp at each start.                             |
-| `BOT_IMAGE_TAG`                                               | `latest`                 | Compose only: `latest` or `music`.                                      |
-| `COMPOSE_PROFILES`                                            | empty                    | Compose only: `autoupdate` turns on the daily updater.                  |
-| `TZ`                                                          | UTC                      | Time zone for the 04:00 update check.                                   |
-| `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `YOUTUBE_API_KEY` | empty                    | Stream alerts.                                                          |
-| `STEAM_API_KEY`, `RIOT_API_KEY`                               | empty                    | `/gamestats`.                                                           |
-| `LOG_LEVEL`, `NODE_ENV`                                       | info, production         | Logging.                                                                |
-| `CHECKPOINT_DISABLE`                                          | 1                        | Turns off Prisma's CLI update check (already set in the image).         |
+| Variable                                                      | Default                    | What it does                                                            |
+| ------------------------------------------------------------- | -------------------------- | ----------------------------------------------------------------------- |
+| `DISCORD_TOKEN`                                               | — (required)               | Bot token from the Developer Portal → Bot. Trimmed of stray whitespace. |
+| `DISCORD_CLIENT_ID`                                           | looked up from the token   | Only kept for older setups / `deploy-commands`.                         |
+| `DISCORD_GUILD_ID`                                            | empty (global commands)    | Developers: register commands in one server instantly.                  |
+| `DATABASE_URL`                                                | `file:../data/bot.db`      | Relative to `prisma/`, so it lands in `./data` (§16).                   |
+| `ENABLE_MESSAGE_CONTENT`                                      | false                      | Privileged intent: invite/word filters, mention spam, prefix commands.  |
+| `ENABLE_PREFIX_COMMANDS`, `PREFIX`                            | false, `!`                 | Legacy `!` commands.                                                    |
+| `ENABLE_GUILD_MEMBERS`                                        | false                      | Privileged intent: welcome/goodbye, anti-raid, birthday-role cleanup.   |
+| `ENABLE_PRESENCE`                                             | false                      | Privileged intent: `/activityrole`.                                     |
+| `ENABLE_MUSIC`                                                | false                      | Turns on `/music` (needs the `music` image, or ffmpeg + yt-dlp).        |
+| `MUSIC_AUTO_UPDATE`                                           | true                       | With music on, update yt-dlp at each start.                             |
+| `BOT_IMAGE_TAG`                                               | `latest`                   | Compose only: `latest` or `music`.                                      |
+| `COMPOSE_PROFILES`                                            | empty                      | Compose only: `autoupdate` turns on the daily updater.                  |
+| `TZ`                                                          | UTC                        | Time zone for the 04:00 update check.                                   |
+| `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `YOUTUBE_API_KEY` | empty                      | Stream alerts.                                                          |
+| `STEAM_API_KEY`, `RIOT_API_KEY`                               | empty                      | `/gamestats`.                                                           |
+| `LOG_LEVEL`, `NODE_ENV`                                       | info, production           | Logging.                                                                |
+| `CHECKPOINT_DISABLE`                                          | 1                          | Turns off Prisma's CLI update check (already set in the image).         |
+| `ENABLE_DASHBOARD`                                            | false                      | Turns on the web dashboard and `/dashboard` sign-in links.              |
+| `DASHBOARD_PORT`                                              | 3000                       | Dashboard port. Compose publishes it on 127.0.0.1 only when it's set.   |
+| `DASHBOARD_HOST`                                              | 127.0.0.1 (image: 0.0.0.0) | Address the dashboard listens on.                                       |
+| `DASHBOARD_URL`                                               | `http://localhost:PORT`    | Public address for sign-in links (reverse proxy, tunnel, Railway).      |
 
-Intents: Guilds, GuildMessages, GuildMessageReactions, GuildVoiceStates and GuildModeration (bans done outside the bot, for server logs) are always on (none privileged). The three privileged ones are opt-in via the flags above. Invite permissions requested (explicit list, never Administrator): View Channels, Send Messages, Embed Links, Read Message History, Add Reactions, Manage Messages, Kick, Ban, Moderate Members, Manage Roles, Manage Channels, Create Invite, Create Polls, Connect, Speak, Create Private Threads, Send Messages in Threads, Manage Threads, Attach Files, Move Members. No new env vars were needed for the all-in-one set: everything is configured per server in `/setup`.
+Intents: Guilds, GuildMessages, GuildMessageReactions, GuildVoiceStates and GuildModeration (bans done outside the bot, for server logs) are always on (none privileged). The three privileged ones are opt-in via the flags above. Invite permissions requested (explicit list, never Administrator): View Channels, Send Messages, Embed Links, Read Message History, Add Reactions, Manage Messages, Kick, Ban, Moderate Members, Manage Roles, Manage Channels, Create Invite, Create Polls, Connect, Speak, Create Private Threads, Send Messages in Threads, Manage Threads, Attach Files, Move Members. No new env vars were needed for the all-in-one set: everything is configured per server in `/setup`. Blank values in `.env` (`DASHBOARD_PORT=`) mean "use the default".
 
 ## 13. Deployment & Updates
 
 - **Images.** `.github/workflows/docker-image.yml` runs typecheck, lint, tests and build, then builds `ghcr.io/bessv2/discordbot:latest` and `:music` for linux/amd64 and linux/arm64 (64-bit Raspberry Pi). Published on push to `main`, on `v*` tags (versioned tags too) and weekly (fresh Alpine/Node fixes and yt-dlp); PRs only test-build (amd64, nothing pushed). The `music` image is built with `MUSIC=true` (ffmpeg, python3, yt-dlp's official release).
-- **Compose.** `docker-compose.yml` pulls the image (`BOT_IMAGE_TAG`), mounts `./data`, `restart: unless-stopped`. `docker-compose.build.yml` overrides it to build from source.
+- **Compose.** `docker-compose.yml` pulls the image (`BOT_IMAGE_TAG`), mounts `./data`, `restart: unless-stopped`, and publishes the dashboard port on 127.0.0.1 only: `127.0.0.1:${DASHBOARD_PORT:-}:${DASHBOARD_PORT:-3000}`, so with `DASHBOARD_PORT` unset Docker picks a random free port and the line can never clash with another service on 3000. The image sets `DASHBOARD_HOST=0.0.0.0` (inside the container). `docker-compose.build.yml` overrides it to build from source.
 - **Startup** (`docker-entrypoint.sh`): `prisma migrate deploy`, then (music only) `yt-dlp -U`, then the bot.
 - **Updates.** Manual: `docker compose pull && docker compose up -d`. Automatic (opt-in): `COMPOSE_PROFILES=autoupdate` adds `nickfedor/watchtower:1.23.2`, which only updates containers labelled `com.centurylinklabs.watchtower.enable=true` (just the bot), daily at 04:00, and cleans up old images.
 - **Other paths.** Railway builds the Dockerfile itself (`docs/RAILWAY.md`; set `MUSIC=true` there for music). Bare Node: `npm ci && npm run build && npm run db:migrate && npm start`, with pm2.
@@ -320,9 +332,9 @@ Migrations, in order: `init` (v1 core) → `add_v1x_and_fun_modules` → `add_pr
 
 ## 15. Testing & Verification
 
-- **Unit tests** (`npm test`, 129): auto-mod detectors, permission gate, role hierarchy and role-assign checks, durations, dice, economy payouts and daily reset, XP curve, raid detection, brackets, activity-role matching, module switches and registry consistency, map parsing, music query classification and yt-dlp output parsing, `/setup` status logic, purge selection, auto-responder matching, announcement repeats, ticket transcripts, server-log switches, message-text redaction.
+- **Unit tests** (`npm test`, 141): auto-mod detectors, permission gate, role hierarchy and role-assign checks, durations, dice, economy payouts and daily reset, XP curve, raid detection, brackets, activity-role matching, module switches and registry consistency, map parsing, music query classification and yt-dlp output parsing, `/setup` status logic, purge selection, auto-responder matching, announcement repeats, ticket transcripts, server-log switches, message-text redaction, dashboard sign-in tokens and sessions, field validation, and HTML escaping.
 - **CI**: the same checks on every PR, plus test builds of both images.
-- **End-to-end check** (`npm run build && npm run test:e2e`, `tests/e2e/`, runs in CI): the real bot code and a real SQLite database, with discord.js's network layer replaced by a simulated Discord that records every API call. It drives all 51 commands, every `/setup` screen and button, auto-mod, XP and auto-responders via message events, reaction roles, starboard, welcome, join roles and Verify, appeals, tickets (thread, transcript, close), giveaways, suggestions, server logs (deletes, edits, roles, bans, voice), join-to-create voice, and the scheduler jobs: 217/217 checks, 221/221 with music on (`-- --music`). The yt-dlp → ffmpeg → Opus pipeline was checked separately with a stand-in yt-dlp (3 s of audio → 151 Opus packets). Bugs it has found and that were fixed: `/unmute` not recording a case, module switches failing for a server with no settings row, and `/unban` trusting a stale ban cache.
+- **End-to-end check** (`npm run build && npm run test:e2e`, `tests/e2e/`, runs in CI): the real bot code and a real SQLite database, with discord.js's network layer replaced by a simulated Discord that records every API call. It drives all 52 commands, every `/setup` screen and button, auto-mod, XP and auto-responders via message events, reaction roles, starboard, welcome, join roles and Verify, appeals, tickets (thread, transcript, close), giveaways, suggestions, server logs (deletes, edits, roles, bans, voice), join-to-create voice, the scheduler jobs, and the web dashboard over real HTTP (sign-in link used once, CSRF refusal, toggles, saving and refusing settings, role hierarchy, XSS escaping, a non-admin session ended, sign-out): 237/237 checks, 241/241 with music on (`-- --music`). The yt-dlp → ffmpeg → Opus pipeline was checked separately with a stand-in yt-dlp (3 s of audio → 151 Opus packets). Bugs it has found and that were fixed: `/unmute` not recording a case, module switches failing for a server with no settings row, and `/unban` trusting a stale ban cache.
 - **Manual test walkthrough** for a fresh server: `docs/TESTING.md`.
 
 ## 16. Decision Log
@@ -345,6 +357,9 @@ Decisions already made, so they don't get relitigated. Newest last.
 - **2026-11-01 — Tickets are private threads, not channels:** no category or per-ticket channel permissions to manage, and they need no Server Boost. Mentioning the staff role adds staff to the thread.
 - **2026-11-01 — Message-text retention edits the log message**, because the text only ever lives in Discord (the mod-log or server-log message), never in the database. Each such message is recorded with an expiry, and the slow tick replaces the text fields with "(removed after N days)".
 - **2026-11-01 — "Not set up yet" is its own state** (◽) on the feature map, so a fresh server isn't covered in ⚠️ warnings for features that simply need a channel picked. ⚠️ now means "on, but something's wrong".
+- **2026-11-01 — Web dashboard runs inside the bot, off by default.** No second container or service; express is only loaded when `ENABLE_DASHBOARD=true`. Server-rendered forms with no JavaScript, so there's no front-end build and nothing for a CSP to let through.
+- **2026-11-01 — Dashboard sign-in is a one-time link from `/dashboard`, not Discord OAuth.** OAuth would need the host to register a redirect URL and keep a client secret, and only works on a fixed public address; a link from an ephemeral slash-command reply proves who the person is and that they're an admin, with nothing to configure. Sessions live in memory (a restart signs everyone out) and need no schema change.
+- **2026-11-01 — The dashboard is local-only by default** (127.0.0.1, and compose publishes on 127.0.0.1). Remote access is the host's explicit choice: SSH tunnel, VPN, or an HTTPS reverse proxy with `DASHBOARD_URL`.
 - **2026-11-01 — `/setup` has one menu per group** (Moderation, Community, Games & fun), because a Discord menu holds at most 25 options and there are now 33 features.
 
 ## 17. Known Gaps & Open Items
@@ -357,6 +372,8 @@ Decisions already made, so they don't get relitigated. Newest last.
 - **Server logs only know message text the bot saw arrive**, and only with Message Content on: messages from before the last restart are logged as deleted without their text, and edits to them aren't logged.
 - **Ticket transcripts** include message text only with Message Content on; without it they list who wrote when, plus attachments.
 - **`/voice rename`** is limited by Discord to 2 renames per room every 10 minutes.
+- **Dashboard scope:** it edits each feature's settings and switches, permission roles and reads cases. Lists managed by commands (tags, reaction roles, XP role rewards, map pools, auto-responders, stream alerts, channel overrides, scheduled announcements) are still managed in Discord. Dashboard changes are written to the bot's log, not the mod-log.
+- **Dashboard sessions are in memory**, so a restart signs everyone out (run `/dashboard` again).
 - **Native Discord AutoMod** isn't used yet. Moving the invite and word filters onto it would let them run without the Message Content intent; a good next step.
 
 Fixed on 2026-11-01: legacy `!` commands now have a `/setup` switch; message text in logs has an opt-in and enforced retention; the Muted role is applied to channels created later (and now blocks thread posting too); the end-to-end check is in the repo and in CI.
@@ -368,3 +385,4 @@ Fixed on 2026-11-01: legacy `!` commands now have a `/setup` switch; message tex
 - **PR #3 (2026-10-31)** — Beginner step-by-step Docker guide; self-registering commands and invite link; Prisma update check off; all-in-one `/setup` feature map with per-server module switches; `/map`, `/jam`, `/music`; ready-made images with opt-in auto-update; `/unmute` case fix.
 - **PR #5 (2026-11-01)** — `CLAUDE.md` → `PROJECT.md`, rewritten as full project notes.
 - **2026-11-01** — All-in-one assistant: the three known gaps fixed; moderation essentials; server logs; tickets; suggestions; giveaways; join roles and Verify; auto-responders; announcements; join-to-create voice; `/help`; `/setup` menus per group; end-to-end check committed and run in CI.
+- **2026-11-01** — Optional web dashboard (`/dashboard`, `ENABLE_DASHBOARD`): feature map with switches, per-feature settings, permission roles, case history.

@@ -63,6 +63,20 @@ deployment's **Deploy Logs** and look for the line
 `The bot isn't in any server yet. Open this link in your browser...` —
 that's your invite link. Then run `/setup` in your server.
 
+## Optional: the web dashboard
+
+Railway can give the bot a public **https** address, which suits the
+dashboard (the sign-in link and cookie stay encrypted):
+
+1. **Variables:** add `ENABLE_DASHBOARD=true` and `DASHBOARD_PORT=3000`.
+2. **Settings → Networking → Generate Domain**, with port `3000`.
+3. Add `DASHBOARD_URL=https://<the domain Railway gave you>`, so the
+   `/dashboard` links point there.
+
+Only server admins can sign in, each with a one-time link from `/dashboard`;
+everyone else just sees "Not signed in". Skip this section and the bot has
+no public address at all.
+
 ## Upgrading
 
 Push to the branch Railway is tracking — it rebuilds and redeploys

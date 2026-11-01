@@ -21,6 +21,12 @@ async function main() {
     handleLoginError(err as Error);
     process.exit(1);
   }
+
+  // Loaded only when switched on, so a host who never uses it never loads express.
+  if (config.ENABLE_DASHBOARD) {
+    const { startDashboard } = await import('./dashboard/server');
+    startDashboard(client);
+  }
 }
 
 function handleLoginError(err: Error): void {
@@ -59,6 +65,7 @@ function handleLoginError(err: Error): void {
 async function shutdown(signal: string): Promise<void> {
   logger.info(`Received ${signal}, shutting down...`);
   stopAllMusic(); // kills ffmpeg/yt-dlp children before the process exits
+  if (config.ENABLE_DASHBOARD) await (await import('./dashboard/server')).stopDashboard();
   client.destroy();
   await prisma.$disconnect();
   process.exit(0);

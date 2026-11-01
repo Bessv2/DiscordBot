@@ -10,6 +10,10 @@ import { z } from 'zod';
 // there — dotenv never overrides a variable that's already set.
 dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
+// `NAME=` with nothing after it (as .env.example ships) means "use the default".
+const blankIsUnset = <T extends z.ZodTypeAny>(schema: T) =>
+  z.preprocess((v) => (typeof v === 'string' && v.trim() === '' ? undefined : v), schema);
+
 // Every env var the bot reads lives here and in .env.example — nothing
 // sensitive or tunable is allowed to be read directly via process.env
 // elsewhere, so this file is always the full list of what a host can set.
@@ -53,6 +57,28 @@ const envSchema = z.object({
     .string()
     .optional()
     .transform((v) => v === 'true'),
+
+  // Opt-in web dashboard, served by the bot itself (no extra container).
+  // Admins sign in with a one-time link from /dashboard, so there are no
+  // passwords to manage. Listens on this machine only unless DASHBOARD_HOST
+  // says otherwise (compose sets 0.0.0.0 inside the container and publishes
+  // the port on 127.0.0.1 only).
+  ENABLE_DASHBOARD: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
+  DASHBOARD_PORT: blankIsUnset(z.coerce.number().int().min(1).max(65535).default(3000)),
+  DASHBOARD_HOST: blankIsUnset(z.string().trim().min(1).default('127.0.0.1')),
+  // The address people open in their browser. Behind a reverse proxy or a
+  // tunnel, set it to the public https:// address so sign-in links work.
+  DASHBOARD_URL: blankIsUnset(
+    z
+      .string()
+      .trim()
+      .url('DASHBOARD_URL must be a full address like https://bot.example.com')
+      .optional()
+      .transform((v) => v?.replace(/\/+$/, '')),
+  ),
 
   // Optional integrations below — every one of them fails closed (feature
   // just doesn't run, logged once) rather than crashing when unset.

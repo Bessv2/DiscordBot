@@ -11,11 +11,10 @@ import {
   StringSelectMenuBuilder,
 } from 'discord.js';
 import { Command } from '../types';
-import { config } from '../../config';
 import { getOrCreateGuildConfig, prisma } from '../../lib/db';
 import { logger } from '../../lib/logger';
-import { getConfiguredRoleIds } from '../../lib/permissions';
-import { HostFacts, STATE_ICON, featureMapFields, featureStatuses } from '../../setup/status';
+import { STATE_ICON, featureMapFields, featureStatuses } from '../../setup/status';
+import { hostFacts } from '../../setup/hostFacts';
 import {
   PanelCtx,
   PanelId,
@@ -172,22 +171,6 @@ export const setupCommand: Command = {
 const WELCOME =
   "👋 **Welcome!** Here's everything this bot can do. **Quick start** walks you through the three essentials, or pick any feature from the menu. " +
   'Skip anything you like: every feature works with sensible defaults, and you can come back with `/setup` any time.';
-
-async function hostFacts(guildId: string): Promise<HostFacts> {
-  return {
-    messageContent: config.ENABLE_MESSAGE_CONTENT,
-    guildMembers: config.ENABLE_GUILD_MEMBERS,
-    presence: config.ENABLE_PRESENCE,
-    music: config.ENABLE_MUSIC,
-    twitchOrYoutube: Boolean(
-      (config.TWITCH_CLIENT_ID && config.TWITCH_CLIENT_SECRET) || config.YOUTUBE_API_KEY,
-    ),
-    steamOrRiot: Boolean(config.STEAM_API_KEY || config.RIOT_API_KEY),
-    prefixCommands: config.ENABLE_PREFIX_COMMANDS,
-    modRoleCount: (await getConfiguredRoleIds(guildId, 'moderation')).length,
-    adminRoleCount: (await getConfiguredRoleIds(guildId, 'admin')).length,
-  };
-}
 
 async function renderMap(ctx: PanelCtx, notice?: string): Promise<Rendered> {
   const statuses = featureStatuses(ctx.gc, await hostFacts(ctx.guild.id));

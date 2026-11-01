@@ -33,7 +33,7 @@ const CORE: { group: ModuleGroup; title: string; commands: string[] }[] = [
       'lockdown',
     ],
   },
-  { group: 'Moderation', title: '⚙️ Setup', commands: ['setup', 'config', 'xp', 'welcome'] },
+  { group: 'Moderation', title: '⚙️ Setup', commands: ['setup', 'dashboard', 'config', 'xp', 'welcome'] },
   {
     group: 'Community',
     title: 'ℹ️ Info',
