@@ -46,7 +46,7 @@ Either way, you should see something like:
 Logged in as YourBot#1234 — serving 0 guild(s).
 The bot isn't in any server yet. Open this link in your browser to add it to one:
     https://discord.com/api/oauth2/authorize?client_id=...
-Registered 37 slash commands globally.
+Registered 51 slash commands globally.
 ```
 in the logs. The bot registers its own slash commands on startup, so there's no separate step for that. If you see an error instead, it should tell you specifically what's wrong and how to fix it (bad token, missing intent, unwritable data directory, etc.) rather than a raw stack trace — that's intentional, and if it isn't, that's a bug worth reporting.
 

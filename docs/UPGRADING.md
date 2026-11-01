@@ -39,7 +39,7 @@ Older versions of `docker-compose.yml` had `build: .`. Download the current `doc
 
 ## New bot permissions
 
-When a release adds a feature that needs a new Discord permission, servers that invited the bot earlier don't get it automatically. Open the invite link from the bot's startup log again and authorize it: Discord adds the missing permissions to the bot's role, and nothing else changes. The latest example is **Create Invite** (`/jam`), **Create Polls** (`/map vote`), and **Connect** and **Speak** (`/music`).
+When a release adds a feature that needs a new Discord permission, servers that invited the bot earlier don't get it automatically. Open the invite link from the bot's startup log again and authorize it: Discord adds the missing permissions to the bot's role, and nothing else changes. Recent examples: **Create Invite** (`/jam`), **Create Polls** (`/map vote`), **Connect** and **Speak** (`/music`), and in the latest release **Create Private Threads**, **Send Messages in Threads**, **Manage Threads** and **Attach Files** (tickets) and **Move Members** (join-to-create voice).
 
 ## Node version (bare Node)
 
