@@ -139,6 +139,12 @@ export const PAGES: FeaturePage[] = [
         label: 'Banned words or phrases',
         help: 'One per line.',
       },
+      {
+        kind: 'bool',
+        key: 'nativeAutomod',
+        label: "Use Discord's AutoMod for the invite, word and mention filters",
+        help: 'Discord blocks those messages before anyone sees them, and it works without Message Content. Needs the bot to have Manage Server. Flood detection stays with the bot.',
+      },
       ...keepText,
     ],
   },

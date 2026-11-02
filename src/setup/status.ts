@@ -2,6 +2,7 @@
 // feature map. No Discord or DB access, so it's unit tested directly.
 import { MODULES, ModuleDef, ModuleGroup, ModuleId, isModuleOn } from '../lib/modules';
 import { parseStringList } from '../lib/jsonList';
+import { parseNativeState } from '../automod/native';
 
 // idle = on, but not set up yet (e.g. no channel picked), so it isn't doing anything.
 export type FeatureState = 'on' | 'idle' | 'off' | 'needs';
@@ -23,6 +24,8 @@ export interface StatusConfig {
   appealChannelId: string | null;
   disabledModules: string;
   automodEnabled: boolean;
+  nativeAutomod: boolean;
+  nativeAutomodState: string;
   inviteFilterOn: boolean;
   wordFilterOn: boolean;
   antiRaidEnabled: boolean;
@@ -103,7 +106,14 @@ function moduleStatus(m: ModuleDef, gc: StatusConfig, host: HostFacts): FeatureS
   const idle = (detail: string): FeatureStatus => ({ ...base, state: 'idle', detail });
 
   switch (m.id) {
-    case 'automod':
+    case 'automod': {
+      if (gc.nativeAutomod) {
+        const s = parseNativeState(gc.nativeAutomodState);
+        if (s.error) return needs(s.error.replace(/\*\*/g, ''));
+        return fine(
+          ['flood detection', Object.keys(s.ids).length && "Discord AutoMod runs the invite/word/mention filters"].filter(Boolean).join('; '),
+        );
+      }
       return (gc.inviteFilterOn || gc.wordFilterOn) && !host.messageContent
         ? needs(
             'flood detection works; the invite/word filters need the host to turn on Message Content',
@@ -117,6 +127,7 @@ function moduleStatus(m: ModuleDef, gc: StatusConfig, host: HostFacts): FeatureS
               .filter(Boolean)
               .join(', '),
           );
+    }
     case 'antiraid':
       return host.guildMembers
         ? fine('watching joins')

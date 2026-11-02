@@ -95,6 +95,7 @@ class FakeDiscord {
     this.attachments = new Map(); // url -> body
     this.extraChannels = new Map(); // threads and channels the bot created
     this.bans = new Map(); // userId -> reason
+    this.automodRules = new Map(); // id -> raw AutoMod rule
   }
 
   install(client) {
@@ -394,6 +395,28 @@ class FakeDiscord {
         return { ...this.guildRaw(), ...body };
       }
       return this.guildRaw();
+    }
+    if ((m = route.match(/^\/guilds\/(\d+)\/auto-moderation\/rules(?:\/(\d+))?$/))) {
+      const id = m[2];
+      if (method === 'POST') {
+        c.kind = 'automodCreate';
+        const r = { ...body, id: snow(), guild_id: m[1], creator_id: IDS.bot };
+        this.automodRules.set(r.id, r);
+        return r;
+      }
+      if (method === 'PATCH') {
+        c.kind = 'automodEdit';
+        if (!this.automodRules.has(id)) throw new djs.DiscordAPIError({ code: 10066, message: 'Unknown auto moderation rule' }, 10066, 404, 'PATCH', route, {});
+        const r = { ...this.automodRules.get(id), ...body };
+        this.automodRules.set(id, r);
+        return r;
+      }
+      if (method === 'DELETE') {
+        c.kind = 'automodDelete';
+        this.automodRules.delete(id);
+        return undefined;
+      }
+      return id ? this.automodRules.get(id) : [...this.automodRules.values()];
     }
     if ((m = route.match(/^\/applications\/(\d+)\/commands$/)) && method === 'PUT') {
       c.kind = 'commandsSet';

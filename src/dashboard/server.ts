@@ -40,6 +40,7 @@ import { FormOptions, Shell, casesPage, featurePage, messagePage, overviewPage }
 import { ApiStatus, addonsPage } from './addonsPage';
 import { ADDON_KINDS, parseHookBody } from '../addons/parse';
 import { checkAddonNow, createAddon, handleHook } from '../addons/runner';
+import { syncNativeAutomod } from '../automod/native';
 
 const COOKIE = 'dash_sid';
 
@@ -260,6 +261,7 @@ export function createApp(client: Client): express.Express {
     const gc = await getOrCreateGuildConfig(ctx.guild.id);
     const on = !isModuleOn(gc, id);
     await setModuleOn(ctx.guild.id, id, on);
+    if (id === 'automod') await syncNativeAutomod(ctx.guild).catch(() => undefined);
     logger.info(
       `Dashboard: ${ctx.member.user.tag} turned ${id} ${on ? 'on' : 'off'} in ${ctx.guild.id}`,
     );
@@ -413,6 +415,13 @@ export function createApp(client: Client): express.Express {
       await prisma.guildConfig.update({ where: { id: ctx.guild.id }, data });
     for (const p of perms) await setPermissionRoles(ctx.guild.id, p.scope, p.ids);
     logger.info(`Dashboard: ${ctx.member.user.tag} saved ${page.id} settings in ${ctx.guild.id}`);
+    if (page.id === 'automod' || page.id === 'permissions') {
+      const err = await syncNativeAutomod(ctx.guild, page.id === 'automod').catch((e: Error) => e.message);
+      if (err) {
+        res.type('html').send(await renderFeature(ctx, page.id, undefined, [`Saved, but: ${err.replace(/\*\*/g, '')}`]));
+        return;
+      }
+    }
     res.redirect(303, `/f/${page.id}?saved=1`);
   });
 

@@ -32,6 +32,12 @@ model GuildConfig {
   // Retention for anything logged from raw message content (auto-mod hits).
   // 0 = don't store message content at all, only metadata.
   logMessageContent Boolean @default(false)
+  // Use Discord's own AutoMod for the invite, word and mention filters, so
+  // they work without the Message Content intent. nativeAutomodState is
+  // JSON: the IDs of the rules the bot made, a hash of what they say, and
+  // the last sync error.
+  nativeAutomod      Boolean @default(false)
+  nativeAutomodState String  @default("{}")
   contentRetainDays Int     @default(30)
 
   // Legacy prefix commands, opt-in per guild on top of the global env flag.

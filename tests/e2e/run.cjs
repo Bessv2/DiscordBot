@@ -1198,6 +1198,46 @@ async function emitMessage(raw) {
     takeLog();
   }
 
+  heading("Discord's AutoMod");
+  {
+    const { syncNativeAutomod } = require(`${ROOT}/dist/automod/native`);
+    const guild = client.guilds.cache.get(IDS.guild);
+    await prisma.guildConfig.update({ where: { id: IDS.guild }, data: { automodEnabled: true, inviteFilterOn: true, wordFilterOn: true, bannedWords: JSON.stringify(['frog']), nativeAutomod: true } });
+    let mark = fake.calls.length;
+    let err = await syncNativeAutomod(guild, true);
+    const made = fake.callsSince(mark).filter((c) => c.kind === 'automodCreate');
+    check('turning it on creates the invite, word and mention rules', !err && made.length === 3 && made.some((c) => c.body.trigger_metadata?.keyword_filter?.[0] === 'frog') && made.some((c) => c.body.trigger_type === 5), `${err} ${made.map((c) => c.body.name)}`);
+    mark = fake.calls.length;
+    err = await syncNativeAutomod(guild);
+    check('syncing again with nothing changed makes no API calls', !err && fake.callsSince(mark).filter((c) => /automod/.test(c.kind)).length === 0);
+    await prisma.guildConfig.update({ where: { id: IDS.guild }, data: { bannedWords: JSON.stringify(['frog', 'toad']) } });
+    mark = fake.calls.length;
+    await syncNativeAutomod(guild);
+    const edits = fake.callsSince(mark).filter((c) => c.kind === 'automodEdit');
+    check('changing the word list edits the existing rule', edits.length === 3 && [...fake.automodRules.values()].some((r) => (r.trigger_metadata?.keyword_filter || []).includes('toad')));
+    const before = fake.calls.length;
+    const msg = userMessage(IDS.user, 'join discord.gg/abcdef now');
+    await emitMessage(msg);
+    await fake.settle();
+    check('the bot no longer deletes what Discord already blocks', !fake.callsSince(before).some((c) => c.kind === 'delete'));
+    const wordsRule = [...fake.automodRules.values()].find((r) => r.name === 'Bot: banned words');
+    fake.automodRules.delete(wordsRule.id);
+    await prisma.guildConfig.update({ where: { id: IDS.guild }, data: { mentionSpamLimit: 7 } });
+    mark = fake.calls.length;
+    await syncNativeAutomod(guild);
+    check('a rule deleted by hand in Server Settings is made again', fake.callsSince(mark).some((c) => c.kind === 'automodCreate' && c.body.name === 'Bot: banned words'));
+    await prisma.guildConfig.update({ where: { id: IDS.guild }, data: { nativeAutomod: false } });
+    mark = fake.calls.length;
+    await syncNativeAutomod(guild);
+    check('turning it off removes the bot\'s rules', fake.callsSince(mark).filter((c) => c.kind === 'automodDelete').length === 3 && fake.automodRules.size === 0);
+    const before2 = fake.calls.length;
+    await emitMessage(userMessage(IDS.user, 'join discord.gg/abcdef now'));
+    await fake.settle();
+    check('...and the bot\'s own invite filter takes over again', fake.callsSince(before2).some((c) => c.kind === 'delete'));
+    await prisma.guildConfig.update({ where: { id: IDS.guild }, data: { automodEnabled: false, inviteFilterOn: false, wordFilterOn: false, bannedWords: '[]', mentionSpamLimit: 5 } });
+    takeLog();
+  }
+
   // ── report ──────────────────────────────────────────────────────────────
   const failed = results.filter((r) => !r.ok);
   out(`\n${results.length - failed.length}/${results.length} checks passed${failed.length ? `, ${failed.length} failed:` : '.'}`);

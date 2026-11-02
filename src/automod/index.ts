@@ -8,6 +8,7 @@ import { recordMessageAndCheckSpam } from './spam';
 import { containsInviteLink } from './invite';
 import { findBannedWord } from './wordFilter';
 import { isMentionSpam } from './mentionSpam';
+import { nativeCovered } from './native';
 
 /** Returns true if the message was flagged (and deleted), so callers can skip XP/prefix handling for it. */
 export async function runAutomod(message: Message<true>): Promise<boolean> {
@@ -36,19 +37,22 @@ export async function runAutomod(message: Message<true>): Promise<boolean> {
   // is only reliable with the privileged Message Content intent — see
   // src/discord/client.ts for why that's opt-in via ENABLE_MESSAGE_CONTENT.
   if (!config.ENABLE_MESSAGE_CONTENT) return false;
+  // Filters Discord's own AutoMod is running for this server (native.ts)
+  // already blocked the message before it was sent; don't double up.
+  const native = nativeCovered(guildConfig);
 
   const mentionCount = message.mentions.users.size + message.mentions.roles.size;
-  if (!override?.exemptMentionSpam && isMentionSpam(mentionCount, guildConfig.mentionSpamLimit)) {
+  if (!native.has('mentions') && !override?.exemptMentionSpam && isMentionSpam(mentionCount, guildConfig.mentionSpamLimit)) {
     await flagMessage(message, guildConfig, 'mention-spam', `Mentioned ${mentionCount} users/roles in one message.`);
     return true;
   }
 
-  if (guildConfig.inviteFilterOn && !override?.exemptInvite && containsInviteLink(message.content)) {
+  if (guildConfig.inviteFilterOn && !native.has('invite') && !override?.exemptInvite && containsInviteLink(message.content)) {
     await flagMessage(message, guildConfig, 'invite-link', 'Posted a Discord invite link.');
     return true;
   }
 
-  if (guildConfig.wordFilterOn && !override?.exemptWordFilter) {
+  if (guildConfig.wordFilterOn && !native.has('words') && !override?.exemptWordFilter) {
     const bannedWords: string[] = JSON.parse(guildConfig.bannedWords || '[]');
     const hit = findBannedWord(message.content, bannedWords);
     if (hit) {

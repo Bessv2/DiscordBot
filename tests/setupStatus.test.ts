@@ -14,6 +14,8 @@ const gc: StatusConfig = {
   appealChannelId: null,
   disabledModules: '[]',
   automodEnabled: false,
+  nativeAutomod: false,
+  nativeAutomodState: '{}',
   inviteFilterOn: false,
   wordFilterOn: false,
   antiRaidEnabled: false,

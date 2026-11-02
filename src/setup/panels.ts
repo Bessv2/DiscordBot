@@ -22,6 +22,7 @@ import {
 } from 'discord.js';
 import type { GuildConfig } from '@prisma/client';
 import { config } from '../config';
+import { parseNativeState, syncNativeAutomod } from '../automod/native';
 import { prisma } from '../lib/db';
 import { checkRoleAssignable } from '../lib/moderationGuard';
 import { getModule, isModuleOn, ModuleId, setModuleOn } from '../lib/modules';
@@ -375,10 +376,19 @@ const panels: Record<PanelId, Panel> = {
           inline: true,
         },
       );
-      if (!config.ENABLE_MESSAGE_CONTENT) {
+      const native = parseNativeState(gc.nativeAutomodState);
+      embed.addFields({
+        name: "Discord's AutoMod",
+        value: gc.nativeAutomod
+          ? native.error
+            ? `⚠️ ${native.error}`
+            : `On: Discord itself blocks invite links, banned words and mention spam before anyone sees them (rules named "Bot: ..." in Server Settings → AutoMod). Flood detection stays with the bot.`
+          : 'Off. Turn it on to have Discord run the invite, word and mention filters: they then work without Message Content, and block messages instead of deleting them afterwards. Needs the bot to have **Manage Server**.',
+      });
+      if (!config.ENABLE_MESSAGE_CONTENT && !(gc.nativeAutomod && !native.error)) {
         embed.addFields(
           hostNote(
-            'Flood detection works now. The invite filter, word filter and mention-spam check need **Message Content** turned on (ENABLE_MESSAGE_CONTENT) by whoever runs the bot.',
+            "Flood detection works now. The invite filter, word filter and mention-spam check need **Message Content** turned on (ENABLE_MESSAGE_CONTENT) by whoever runs the bot, or Discord's AutoMod (button below).",
           ),
         );
       }
@@ -394,6 +404,7 @@ const panels: Record<PanelId, Panel> = {
               gc.inviteFilterOn ? 'Invite filter: on' : 'Invite filter: off',
             ),
             button('automod', 'words', 'Banned words…'),
+            button('automod', 'native', gc.nativeAutomod ? "Discord AutoMod: on" : "Use Discord's AutoMod"),
           ),
           row(...textRetentionButtons('automod', gc)),
         ],
@@ -406,6 +417,17 @@ const panels: Record<PanelId, Panel> = {
       if (action === 'toggle') {
         await update(ctx, { automodEnabled: !gc.automodEnabled });
         return { notice: `Auto-mod is now **${ctx.gc.automodEnabled ? 'on' : 'off'}**.` };
+      }
+      if (action === 'native') {
+        await update(ctx, { nativeAutomod: !gc.nativeAutomod });
+        const err = await syncNativeAutomod(ctx.guild, true);
+        ctx.gc = await prisma.guildConfig.findUniqueOrThrow({ where: { id: ctx.guild.id } });
+        if (err) return { notice: `⚠️ ${err}` };
+        return {
+          notice: ctx.gc.nativeAutomod
+            ? "Discord's AutoMod now runs the invite, word and mention filters."
+            : "Discord's AutoMod rules removed; the bot's own filters are back in charge.",
+        };
       }
       if (action === 'invite') {
         await update(ctx, { inviteFilterOn: !gc.inviteFilterOn });
@@ -1620,5 +1642,12 @@ export async function handlePanel(
   action: string,
   ctx: PanelCtx,
 ): Promise<HandleResult> {
-  return (await panels[panelId].handle?.(i, action, ctx)) ?? {};
+  const result = (await panels[panelId].handle?.(i, action, ctx)) ?? {};
+  // Auto-mod settings and moderator roles feed Discord's AutoMod rules
+  // (exempt roles); keep them in step. A no-op unless something changed.
+  if (panelId === 'automod' || panelId === 'permissions') {
+    await syncNativeAutomod(ctx.guild).catch(() => undefined);
+    ctx.gc = await prisma.guildConfig.findUniqueOrThrow({ where: { id: ctx.guild.id } });
+  }
+  return result;
 }
