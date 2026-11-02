@@ -15,6 +15,8 @@ const gc: StatusConfig = {
   disabledModules: '[]',
   automodEnabled: false,
   nativeAutomod: false,
+  aiTriageEnabled: false,
+  aiTriageChannelId: null,
   nativeAutomodState: '{}',
   inviteFilterOn: false,
   wordFilterOn: false,

@@ -24,6 +24,8 @@ export interface StatusConfig {
   appealChannelId: string | null;
   disabledModules: string;
   automodEnabled: boolean;
+  aiTriageEnabled: boolean;
+  aiTriageChannelId: string | null;
   nativeAutomod: boolean;
   nativeAutomodState: string;
   inviteFilterOn: boolean;
@@ -53,6 +55,7 @@ export interface HostFacts {
   twitchOrYoutube: boolean;
   steamOrRiot: boolean;
   prefixCommands: boolean;
+  aiTriage: boolean;
   modRoleCount: number;
   adminRoleCount: number;
 }
@@ -128,6 +131,11 @@ function moduleStatus(m: ModuleDef, gc: StatusConfig, host: HostFacts): FeatureS
               .join(', '),
           );
     }
+    case 'aitriage':
+      if (!host.aiTriage) return needs('the host needs to set AI_TRIAGE_API_KEY and turn on Message Content');
+      return gc.aiTriageChannelId || gc.modLogChannelId
+        ? fine(`reviews go to ${ch(gc.aiTriageChannelId ?? gc.modLogChannelId)}`)
+        : idle('pick a review channel');
     case 'antiraid':
       return host.guildMembers
         ? fine('watching joins')

@@ -325,6 +325,8 @@ export function createApp(client: Client): express.Express {
     }
     if (pageId === 'prefix' && (!config.ENABLE_PREFIX_COMMANDS || !mc))
       notes.push('Needs ENABLE_PREFIX_COMMANDS=true and Message Content (ENABLE_MESSAGE_CONTENT).');
+    if (pageId === 'aitriage' && (!config.AI_TRIAGE_API_KEY || !config.ENABLE_MESSAGE_CONTENT))
+      notes.push('Needs AI_TRIAGE_API_KEY and Message Content (ENABLE_MESSAGE_CONTENT).');
     if (pageId === 'music' && !config.ENABLE_MUSIC)
       notes.push(
         '/jam works now; the /music player also needs ENABLE_MUSIC=true and the music image.',

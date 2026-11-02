@@ -14,6 +14,7 @@ export async function hostFacts(guildId: string): Promise<HostFacts> {
     ),
     steamOrRiot: Boolean(config.STEAM_API_KEY || config.RIOT_API_KEY),
     prefixCommands: config.ENABLE_PREFIX_COMMANDS,
+    aiTriage: Boolean(config.AI_TRIAGE_API_KEY && config.ENABLE_MESSAGE_CONTENT),
     modRoleCount: (await getConfiguredRoleIds(guildId, 'moderation')).length,
     adminRoleCount: (await getConfiguredRoleIds(guildId, 'admin')).length,
   };

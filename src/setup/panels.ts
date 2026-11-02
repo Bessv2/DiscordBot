@@ -1564,6 +1564,37 @@ const panels: Record<PanelId, Panel> = {
         ? null
         : 'This needs **Message Content** (ENABLE_MESSAGE_CONTENT) to read messages.',
   ),
+  aitriage: {
+    async render(ctx) {
+      const gc = ctx.gc;
+      const on = gc.aiTriageEnabled;
+      const embed = baseEmbed(
+        ctx,
+        '🔎 AI triage',
+        "An AI reads new messages and sends the ones that look harmful (harassment, hate, threats, scams, self-harm) to a review channel with **Delete** and **Looks fine** buttons. It never deletes, warns or bans by itself: a moderator always decides. Moderators' own messages aren't checked.\n\n" +
+          "Message text is sent to Anthropic's API (Claude) using the bot host's own key. Tell your members if you turn this on.",
+        on,
+      ).addFields({
+        name: 'Review channel',
+        value: gc.aiTriageChannelId ? `<#${gc.aiTriageChannelId}>` : gc.modLogChannelId ? `the mod-log (<#${gc.modLogChannelId}>)` : 'not set (pick one)',
+      });
+      if (!config.AI_TRIAGE_API_KEY || !config.ENABLE_MESSAGE_CONTENT)
+        embed.addFields(hostNote('This needs whoever runs the bot to set **AI_TRIAGE_API_KEY** and turn on **Message Content** (ENABLE_MESSAGE_CONTENT).'));
+      return {
+        embed,
+        rows: [channelPicker('aitriage', 'channel', 'Review channel', gc.aiTriageChannelId), row(toggleButton('aitriage', on))],
+      };
+    },
+    async handle(i, action, ctx) {
+      if (action === 'toggle') return { notice: await toggleModule(ctx, 'aitriage') };
+      if (action === 'channel' && i.isChannelSelectMenu()) {
+        await update(ctx, { aiTriageChannelId: i.values[0] });
+        return { notice: `Reviews go to <#${i.values[0]}>.` };
+      }
+      return {};
+    },
+  },
+
   bannetwork: simplePanel(
     'bannetwork',
     '🔗 Ban sharing',

@@ -377,6 +377,14 @@ export const PAGES: FeaturePage[] = [
     moduleId: 'music',
     fields: [{ kind: 'role', key: 'musicDjRoleId', label: 'DJ role (optional)' }],
   },
+  {
+    id: 'aitriage',
+    title: 'AI triage',
+    emoji: '🔎',
+    why: "An AI sends messages that look harmful to a review channel with Delete and Looks fine buttons. It never acts by itself. Message text goes to Anthropic's API using the bot host's key.",
+    moduleId: 'aitriage',
+    fields: [{ kind: 'channel', key: 'aiTriageChannelId', label: 'Review channel (empty = the mod-log)', channelKind: 'text' }],
+  },
 ];
 
 export function getPage(id: string): FeaturePage | undefined {

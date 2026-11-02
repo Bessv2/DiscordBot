@@ -28,6 +28,8 @@ process.env.ENABLE_MUSIC = MUSIC ? 'true' : 'false';
 process.env.ENABLE_DASHBOARD = 'true';
 // The test feed is served from this machine, which add-ons normally refuse.
 process.env.ADDONS_ALLOW_PRIVATE_NETWORK = 'true';
+// AI triage is driven with a stand-in classifier; this key is never used.
+process.env.AI_TRIAGE_API_KEY = 'test-key-not-used';
 process.env.LOG_LEVEL = 'info';
 // The command-sync hash lives in data/; point it away from the real one.
 const realHash = path.join(ROOT, 'data', '.commands-hash');
@@ -1345,6 +1347,47 @@ async function emitMessage(raw) {
     r = await cmd('bannetwork', { sub: 'leave', user: IDS.admin });
     check('/bannetwork leave', /Left/.test(r.text) && !(await prisma.banNetworkMember.findUnique({ where: { guildId: IDS.guild } })));
     await prisma.banNetwork.deleteMany({});
+    takeLog();
+  }
+
+  heading('AI triage (with a stand-in classifier)');
+  {
+    const triage = require(`${ROOT}/dist/features/aiTriage`);
+    const seen = [];
+    triage.setClassifierForTests(async (text) => {
+      seen.push(text);
+      return /worthless/.test(text) ? { flagged: true, category: 'harassment', severity: 'high', reason: 'Insult aimed at a member.' } : { flagged: false, category: 'none', severity: 'low', reason: '' };
+    });
+    await prisma.guildConfig.update({ where: { id: IDS.guild }, data: { aiTriageEnabled: false, aiTriageChannelId: IDS.appeals, modLogChannelId: IDS.modlog } });
+    await emitMessage(userMessage(IDS.user, 'you are worthless', IDS.welcome));
+    await fake.settle();
+    check('with the switch off, nothing is sent to the AI', seen.length === 0);
+    await prisma.guildConfig.update({ where: { id: IDS.guild }, data: { aiTriageEnabled: true } });
+    let mark = fake.calls.length;
+    const bad = userMessage(IDS.user, 'you are worthless', IDS.welcome);
+    await emitMessage(bad);
+    await new Promise((r2) => setTimeout(r2, 50));
+    await fake.settle();
+    const review = fake.callsSince(mark).find((c) => c.kind === 'send' && c.route.includes(IDS.appeals));
+    check('a harmful message goes to the review channel with Delete / Looks fine', review && /For review: harassment/.test(JSON.stringify(review.body)) && /triage_del:/.test(JSON.stringify(review.body)) && !fake.callsSince(mark).some((c) => c.kind === 'delete'), JSON.stringify(review?.body).slice(0, 200));
+    check('...and nothing is done to the message by itself', !fake.callsSince(mark).some((c) => c.kind === 'delete' || c.kind === 'ban' || c.kind === 'timeout'));
+    mark = fake.calls.length;
+    await emitMessage(userMessage(IDS.user, 'good game everyone', IDS.welcome));
+    await new Promise((r2) => setTimeout(r2, 50));
+    await fake.settle();
+    check('a harmless message produces no review', !fake.callsSince(mark).some((c) => c.kind === 'send' && c.route.includes(IDS.appeals)));
+    const before = seen.length;
+    await emitMessage(userMessage(IDS.mod, 'you are worthless (quoting the rules)', IDS.welcome));
+    await new Promise((r2) => setTimeout(r2, 50));
+    check("moderators' messages aren't checked", seen.length === before);
+    if (review) {
+      const posted = fake.msg(IDS.appeals, review.body, { author: USERS[IDS.bot] });
+      let r = await click(posted, `triage_del:${IDS.welcome}:${bad.id}`, { user: IDS.user });
+      check('only moderators can act on a review', /moderators/i.test(r.text) && !r.calls.some((c) => c.kind === 'delete'));
+      r = await click(posted, `triage_del:${IDS.welcome}:${bad.id}`, { user: IDS.mod });
+      check('"Delete message" deletes it and records who did', r.calls.some((c) => c.kind === 'delete') && /Deleted by mo_mod/.test(JSON.stringify(r.calls)), r.text + errText(r));
+    }
+    await prisma.guildConfig.update({ where: { id: IDS.guild }, data: { aiTriageEnabled: false, aiTriageChannelId: null } });
     takeLog();
   }
 

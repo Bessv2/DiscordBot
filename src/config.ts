@@ -93,6 +93,14 @@ const envSchema = z.object({
   // (./data/backups with Docker). 0 turns them off.
   BACKUP_KEEP: blankIsUnset(z.coerce.number().int().min(0).max(365).default(7)),
 
+  // Optional AI triage (off unless set): flags likely-harmful messages for
+  // a moderator to review; never acts on its own. Uses YOUR Anthropic API
+  // key, and sends message text to Anthropic's API for servers that turn it
+  // on, so only set it if that's acceptable for your communities.
+  AI_TRIAGE_API_KEY: blankIsUnset(z.string().trim().min(1).optional()),
+  AI_TRIAGE_MODEL: blankIsUnset(z.string().trim().min(1).default('claude-opus-5-5')),
+  AI_TRIAGE_MAX_PER_MINUTE: blankIsUnset(z.coerce.number().int().min(1).max(600).default(20)),
+
   // Optional integrations below — every one of them fails closed (feature
   // just doesn't run, logged once) rather than crashing when unset.
   TWITCH_CLIENT_ID: z.string().optional(),

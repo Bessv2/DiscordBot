@@ -42,7 +42,8 @@ export type ModuleId =
   | 'announcements'
   | 'tempvoice'
   | 'addons'
-  | 'bannetwork';
+  | 'bannetwork'
+  | 'aitriage';
 
 export type ModuleGroup = 'Moderation' | 'Community' | 'Games & fun';
 
@@ -52,7 +53,8 @@ export type FlagField =
   | 'welcomeEnabled'
   | 'xpEnabled'
   | 'economyEnabled'
-  | 'prefixCommandsOn';
+  | 'prefixCommandsOn'
+  | 'aiTriageEnabled';
 
 export interface ModuleDef {
   id: ModuleId;
@@ -389,6 +391,16 @@ export const MODULES: ModuleDef[] = [
     commands: ['bannetwork'],
     toggle: { kind: 'list' },
     defaultOn: true,
+  },
+  {
+    id: 'aitriage',
+    name: 'AI triage',
+    emoji: '🔎',
+    group: 'Moderation',
+    blurb: 'Optional: an AI flags likely-harmful messages for a moderator to review. It never acts on its own.',
+    commands: [],
+    toggle: { kind: 'flag', field: 'aiTriageEnabled' },
+    defaultOn: false,
   },
 ];
 
