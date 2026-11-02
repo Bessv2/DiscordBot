@@ -37,6 +37,9 @@ import {
 import { PAGES, getPage, parseField, ValidationContext } from './fields';
 import { dashboardUrl } from './url';
 import { FormOptions, Shell, casesPage, featurePage, messagePage, overviewPage } from './render';
+import { ApiStatus, addonsPage } from './addonsPage';
+import { ADDON_KINDS, parseHookBody } from '../addons/parse';
+import { checkAddonNow, createAddon, handleHook } from '../addons/runner';
 
 const COOKIE = 'dash_sid';
 
@@ -129,6 +132,34 @@ export function createApp(client: Client): express.Express {
     fail(res, 200, 'Signed out', 'You are signed out. Run /dashboard in Discord to sign in again.');
   });
 
+  // Incoming add-on webhooks. Authenticated by the secret in the address,
+  // not a session, so they sit before the sign-in check. The raw body is
+  // read as text (max 64 kB) and parsed here, so a malformed body gets a
+  // short plain answer rather than an HTML error page.
+  app.post(
+    '/hooks/:id/:secret',
+    express.text({ type: () => true, limit: '64kb' }),
+    async (req, res) => {
+      const type = String(req.headers['content-type'] ?? '');
+      let body: unknown = typeof req.body === 'string' ? req.body : '';
+      if (/json/i.test(type)) {
+        try {
+          body = JSON.parse(body as string);
+        } catch {
+          res.status(400).type('text').send('invalid JSON');
+          return;
+        }
+      }
+      const result = await handleHook(
+        client,
+        Number(req.params.id),
+        String(req.params.secret),
+        parseHookBody(body, /json/i.test(type) ? 'application/json' : type || 'text/plain'),
+      );
+      res.status(result.status).type('text').send(result.message);
+    },
+  );
+
   // Everything below needs a live session and current admin rights.
   app.use(async (req, res, next) => {
     const id = readCookie(req.headers.cookie, COOKIE);
@@ -212,7 +243,7 @@ export function createApp(client: Client): express.Express {
           shellFor(ctx),
           statuses,
           toggles,
-          new Set(PAGES.map((p) => p.id)),
+          new Set([...PAGES.map((p) => p.id), 'addons']),
           notice,
           mentionName,
         ),
@@ -383,6 +414,188 @@ export function createApp(client: Client): express.Express {
     for (const p of perms) await setPermissionRoles(ctx.guild.id, p.scope, p.ids);
     logger.info(`Dashboard: ${ctx.member.user.tag} saved ${page.id} settings in ${ctx.guild.id}`);
     res.redirect(303, `/f/${page.id}?saved=1`);
+  });
+
+  const apiStatuses = (): ApiStatus[] => [
+    {
+      name: 'Twitch',
+      configured: Boolean(config.TWITCH_CLIENT_ID && config.TWITCH_CLIENT_SECRET),
+      powers: 'Live alerts for Twitch streamers (/streamwatch).',
+      env: 'TWITCH_CLIENT_ID and TWITCH_CLIENT_SECRET',
+      getKey: 'Free at dev.twitch.tv/console/apps.',
+    },
+    {
+      name: 'YouTube',
+      configured: Boolean(config.YOUTUBE_API_KEY),
+      powers:
+        'Live alerts for YouTube channels (/streamwatch). New uploads work without a key: add the channel as an RSS add-on.',
+      env: 'YOUTUBE_API_KEY',
+      getKey: 'Free at console.cloud.google.com (YouTube Data API v3).',
+    },
+    {
+      name: 'Steam',
+      configured: Boolean(config.STEAM_API_KEY),
+      powers: 'Player profiles and stats (/gamestats steam). Steam game news works without a key.',
+      env: 'STEAM_API_KEY',
+      getKey: 'Free at steamcommunity.com/dev/apikey.',
+    },
+    {
+      name: 'Riot Games',
+      configured: Boolean(config.RIOT_API_KEY),
+      powers: 'League of Legends lookups (/gamestats lol).',
+      env: 'RIOT_API_KEY',
+      getKey: 'At developer.riotgames.com.',
+    },
+  ];
+
+  async function renderAddons(
+    ctx: Ctx,
+    extra: {
+      notice?: string;
+      error?: string;
+      newHook?: { id: number; name: string; url: string };
+    } = {},
+  ): Promise<string> {
+    const gc = await getOrCreateGuildConfig(ctx.guild.id);
+    const rows = await prisma.addon.findMany({
+      where: { guildId: ctx.guild.id },
+      orderBy: { id: 'asc' },
+    });
+    return addonsPage(
+      shellFor(ctx),
+      rows.map((a) => ({
+        ...a,
+        channelName: ctx.guild.channels.cache.get(a.channelId)?.name ?? 'deleted-channel',
+      })),
+      textChannels(ctx.guild).map((c) => ({ id: c.id, name: c.name })),
+      pickableRoles(ctx.guild).map((r) => ({ id: r.id, name: r.name })),
+      apiStatuses(),
+      { moduleOn: isModuleOn(gc, 'addons'), ...extra },
+    );
+  }
+
+  app.get('/addons', async (req, res) => {
+    const ctx = res.locals.ctx as Ctx;
+    const notice =
+      typeof req.query.done === 'string'
+        ? (
+            { removed: 'Removed.', paused: 'Paused.', resumed: 'Resumed.' } as Record<
+              string,
+              string
+            >
+          )[req.query.done]
+        : undefined;
+    res.type('html').send(await renderAddons(ctx, { notice }));
+  });
+
+  app.post('/addons', async (req, res) => {
+    const ctx = res.locals.ctx as Ctx;
+    const body = req.body as Body;
+    const one = (k: string) => {
+      const v = body[k];
+      return (Array.isArray(v) ? v[v.length - 1] : v)?.trim() ?? '';
+    };
+    const kind = one('kind');
+    const channelId = one('channelId');
+    const roleId = one('mentionRoleId');
+    let error: string | undefined;
+    if (!ADDON_KINDS.some((k) => k.kind === kind)) error = 'Pick a type.';
+    else if (!textChannels(ctx.guild).some((c) => c.id === channelId))
+      error = "That channel isn't on this server.";
+    else if (roleId && !pickableRoles(ctx.guild).some((r) => r.id === roleId))
+      error = "That role isn't on this server.";
+    else if (ADDON_KINDS.find((k) => k.kind === kind)?.target && !one('target'))
+      error = `This type needs a target: ${ADDON_KINDS.find((k) => k.kind === kind)?.target}.`;
+    if (error) {
+      res
+        .status(400)
+        .type('html')
+        .send(await renderAddons(ctx, { error }));
+      return;
+    }
+    const created = await createAddon({
+      guildId: ctx.guild.id,
+      kind,
+      name: one('name'),
+      channelId,
+      target: one('target'),
+      mentionRoleId: roleId || null,
+      createdBy: ctx.member.id,
+    });
+    if (!created.ok) {
+      res
+        .status(400)
+        .type('html')
+        .send(await renderAddons(ctx, { error: created.error }));
+      return;
+    }
+    logger.info(
+      `Dashboard: ${ctx.member.user.tag} added add-on #${created.addon.id} (${kind}) in ${ctx.guild.id}`,
+    );
+    if (created.secret) {
+      // Shown once, on this response only; it isn't stored, so it can't be shown again.
+      res
+        .type('html')
+        .send(
+          await renderAddons(ctx, {
+            newHook: {
+              id: created.addon.id,
+              name: created.addon.name,
+              url: `${dashboardUrl()}/hooks/${created.addon.id}/${created.secret}`,
+            },
+          }),
+        );
+      return;
+    }
+    const check = await checkAddonNow(client, created.addon);
+    res
+      .type('html')
+      .send(
+        await renderAddons(
+          ctx,
+          check.ok
+            ? { notice: `Added "${created.addon.name}": ${check.message}.` }
+            : {
+                error: `Added "${created.addon.name}", but the first check failed: ${check.message}`,
+              },
+        ),
+      );
+  });
+
+  app.post('/addons/:id/:action', async (req, res) => {
+    const ctx = res.locals.ctx as Ctx;
+    const addon = await prisma.addon.findFirst({
+      where: { id: Number(req.params.id) || -1, guildId: ctx.guild.id },
+    });
+    const action = String(req.params.action);
+    if (!addon || !['test', 'toggle', 'delete'].includes(action)) {
+      fail(res, 404, 'Not found', "There's no such add-on on this server.");
+      return;
+    }
+    if (action === 'delete') {
+      await prisma.addon.delete({ where: { id: addon.id } });
+      logger.info(
+        `Dashboard: ${ctx.member.user.tag} removed add-on #${addon.id} in ${ctx.guild.id}`,
+      );
+      res.redirect(303, '/addons?done=removed');
+      return;
+    }
+    if (action === 'toggle') {
+      await prisma.addon.update({ where: { id: addon.id }, data: { enabled: !addon.enabled } });
+      res.redirect(303, `/addons?done=${addon.enabled ? 'paused' : 'resumed'}`);
+      return;
+    }
+    const check = await checkAddonNow(client, addon);
+    res
+      .type('html')
+      .send(
+        await renderAddons(
+          ctx,
+          check.ok
+            ? { notice: `"${addon.name}": ${check.message}.` }
+            : { error: `"${addon.name}": ${check.message}` },
+        ),
+      );
   });
 
   app.get('/cases', async (req, res) => {

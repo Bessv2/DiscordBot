@@ -80,6 +80,15 @@ const envSchema = z.object({
       .transform((v) => v?.replace(/\/+$/, '')),
   ),
 
+  // Add-ons (RSS feeds) normally refuse private and local addresses, so a
+  // server admin can't use the bot to reach the host's own network. Turn on
+  // only if every admin of every server the bot is in is trusted, e.g. to
+  // read a feed from a reader on your own network.
+  ADDONS_ALLOW_PRIVATE_NETWORK: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
+
   // Optional integrations below — every one of them fails closed (feature
   // just doesn't run, logged once) rather than crashing when unset.
   TWITCH_CLIENT_ID: z.string().optional(),

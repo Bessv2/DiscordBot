@@ -48,7 +48,7 @@ export interface Shell {
 export function layout(title: string, body: string, shell?: Shell): string {
   const header = shell
     ? `<header>${shell.guildIconUrl ? `<img src="${esc(shell.guildIconUrl)}" alt="">` : ''}<span class="name">${esc(shell.guildName)}</span>
-<nav><a href="/">Features</a><a href="/cases">Cases</a>
+<nav><a href="/">Features</a><a href="/addons">Add-ons</a><a href="/cases">Cases</a>
 <form class="inline" method="post" action="/logout"><input type="hidden" name="csrf" value="${esc(shell.csrf)}"><button>Sign out</button></form></nav></header>`
     : '';
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -90,7 +90,7 @@ export function overviewPage(
               ? ''
               : `<form class="inline" method="post" action="/toggle/${esc(s.id)}"><input type="hidden" name="csrf" value="${esc(shell.csrf)}"><button class="${on ? 'on' : 'off'}">${on ? 'Turn off' : 'Turn on'}</button></form>`;
           const settings = pages.has(s.id)
-            ? `<a class="btn" href="/f/${esc(s.id)}">Settings</a>`
+            ? `<a class="btn" href="${s.id === 'addons' ? '/addons' : `/f/${esc(s.id)}`}">Settings</a>`
             : '';
           // Details can contain Discord mention markup like <#123>; show names instead.
           const detail = s.detail.replace(/<(#|@&)(\d+)>/g, (_m, kind: '#' | '@&', id: string) =>

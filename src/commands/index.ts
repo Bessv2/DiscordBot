@@ -43,6 +43,7 @@ import { unbanCommand } from './moderation/unban';
 import { roleCommand } from './moderation/role';
 import { helpCommand } from './utility/help';
 import { dashboardCommand } from './setup/dashboard';
+import { addonsCommand } from './community/addons';
 import { ticketCommand } from './community/ticket';
 import { giveawayCommand } from './community/giveaway';
 import { suggestCommand, suggestionCommand } from './community/suggest';
@@ -99,6 +100,7 @@ export const commands: Command[] = [
   roleCommand,
   helpCommand,
   dashboardCommand,
+  addonsCommand,
   ticketCommand,
   giveawayCommand,
   suggestCommand,

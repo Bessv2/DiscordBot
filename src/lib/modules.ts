@@ -40,7 +40,8 @@ export type ModuleId =
   | 'joinroles'
   | 'autoresponders'
   | 'announcements'
-  | 'tempvoice';
+  | 'tempvoice'
+  | 'addons';
 
 export type ModuleGroup = 'Moderation' | 'Community' | 'Games & fun';
 
@@ -365,6 +366,16 @@ export const MODULES: ModuleDef[] = [
     group: 'Games & fun',
     blurb: 'Give members a role while they are playing a certain game.',
     commands: ['activityrole'],
+    toggle: { kind: 'list' },
+    defaultOn: true,
+  },
+  {
+    id: 'addons',
+    name: 'Add-ons',
+    emoji: '🧩',
+    group: 'Community',
+    blurb: 'Post from other places: news feeds, Steam game news, Epic free games, game servers going up or down, and other apps via webhooks.',
+    commands: ['addons'],
     toggle: { kind: 'list' },
     defaultOn: true,
   },

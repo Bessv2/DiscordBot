@@ -26,6 +26,8 @@ process.env.ENABLE_PRESENCE = 'false';
 process.env.ENABLE_PREFIX_COMMANDS = 'true';
 process.env.ENABLE_MUSIC = MUSIC ? 'true' : 'false';
 process.env.ENABLE_DASHBOARD = 'true';
+// The test feed is served from this machine, which add-ons normally refuse.
+process.env.ADDONS_ALLOW_PRIVATE_NETWORK = 'true';
 process.env.LOG_LEVEL = 'info';
 // The command-sync hash lives in data/; point it away from the real one.
 const realHash = path.join(ROOT, 'data', '.commands-hash');
@@ -1109,6 +1111,90 @@ async function emitMessage(raw) {
     res = await post('/logout', cookie, { csrf });
     check('signing out ends the session', res.status === 200 && (await get('/', cookie)).status === 401);
     await new Promise((r2) => srv.close(r2));
+    takeLog();
+  }
+
+  heading('Add-ons (feeds, webhooks)');
+  {
+    const http = require('node:http');
+    const { createApp } = require(`${ROOT}/dist/dashboard/server`);
+    const { createLoginToken } = require(`${ROOT}/dist/dashboard/auth`);
+    const { checkAddons } = require(`${ROOT}/dist/addons/runner`);
+    let feedItems = [{ guid: 'old-1', title: 'Old patch' }];
+    const feedXml = () =>
+      `<?xml version="1.0"?><rss version="2.0"><channel><title>T</title>${feedItems.map((i) => `<item><guid>${i.guid}</guid><title>${i.title}</title><link>https://game.example/${i.guid}</link><description>Notes for ${i.title}</description></item>`).join('')}</channel></rss>`;
+    const feedSrv = http.createServer((req, res) => {
+      if (req.url === '/feed.xml') res.writeHead(200, { 'content-type': 'application/rss+xml' }).end(feedXml());
+      else res.writeHead(404).end();
+    });
+    await new Promise((res) => feedSrv.listen(0, '127.0.0.1', res));
+    const feedUrl = `http://127.0.0.1:${feedSrv.address().port}/feed.xml`;
+
+    let a = await cmd('addons', { sub: 'add', user: IDS.admin, options: [opt.str('type', 'rss'), opt.chan('channel', IDS.general), opt.str('target', feedUrl), opt.str('name', 'Patch notes')] });
+    const feedAddon = await prisma.addon.findFirst({ where: { kind: 'rss' } });
+    check('/addons add connects a feed without posting its history', feedAddon && /connected/.test(a.text) && !a.calls.some((c) => c.kind === 'send' && /Old patch/.test(JSON.stringify(c.body))), a.text + errText(a));
+    a = await cmd('addons', { sub: 'add', user: IDS.user, options: [opt.str('type', 'epic_free'), opt.chan('channel', IDS.general)] });
+    check('regular members cannot add add-ons', /permission/i.test(a.text));
+    a = await cmd('addons', { sub: 'add', user: IDS.admin, options: [opt.str('type', 'rss'), opt.chan('channel', IDS.general)] });
+    check('a feed without an address is refused', /needs a \*\*target\*\*/.test(a.text) && (await prisma.addon.count()) === 1, a.text);
+
+    feedItems = [{ guid: 'new-2', title: 'Patch 2.0' }, ...feedItems];
+    await prisma.addon.update({ where: { id: feedAddon.id }, data: { lastCheckedAt: new Date(Date.now() - 60 * 60_000) } });
+    let mark = fake.calls.length;
+    await checkAddons(client);
+    await fake.settle();
+    const posted = fake.callsSince(mark).filter((c) => c.kind === 'send');
+    check('a new feed item is posted once by the scheduler', posted.length === 1 && /Patch 2\.0/.test(JSON.stringify(posted[0].body)) && /game\.example\/new-2/.test(JSON.stringify(posted[0].body)), JSON.stringify(posted.map((p) => p.body)).slice(0, 300));
+    mark = fake.calls.length;
+    await prisma.addon.update({ where: { id: feedAddon.id }, data: { lastCheckedAt: new Date(Date.now() - 60 * 60_000) } });
+    await checkAddons(client);
+    await fake.settle();
+    check('...and not again on the next check', !fake.callsSince(mark).some((c) => c.kind === 'send'));
+
+    a = await cmd('addons', { sub: 'list', user: IDS.admin });
+    check('/addons list shows it working', /Patch notes/.test(JSON.stringify(a.calls)) && /working/.test(JSON.stringify(a.calls)), a.text + errText(a));
+
+    // Dashboard side, including the webhook receiver.
+    const srv = http.createServer(createApp(client));
+    await new Promise((res) => srv.listen(0, '127.0.0.1', res));
+    const base = `http://127.0.0.1:${srv.address().port}`;
+    const t = createLoginToken(IDS.admin, IDS.guild);
+    const cookie = ((await fetch(`${base}/login?t=${t}`, { redirect: 'manual' })).headers.get('set-cookie') || '').split(';')[0];
+    let html = await (await fetch(`${base}/addons`, { headers: { cookie } })).text();
+    const csrf = (html.match(/name="csrf" value="([^"]+)"/) || [])[1];
+    check('the dashboard lists add-ons and the API keys status', /Patch notes/.test(html) && /Connected APIs/.test(html) && /TWITCH_CLIENT_ID/.test(html));
+    const form = (f) => fetch(`${base}/addons`, { method: 'POST', redirect: 'manual', headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf, ...f }) });
+    let res = await form({ kind: 'webhook', channelId: IDS.general, name: 'Minecraft server', mentionRoleId: '' });
+    html = await res.text();
+    const hookUrl = (html.match(/value="(http:\/\/[^"]+\/hooks\/[^"]+)"/) || [])[1];
+    check('adding a webhook shows its private address once', res.status === 200 && hookUrl && (await prisma.addon.findFirst({ where: { kind: 'webhook' } })).secretHash && !html.includes('secretHash'));
+    res = await form({ kind: 'rss', channelId: '123', target: 'https://example.com/feed' });
+    check('the dashboard refuses a channel from elsewhere', res.status === 400 && /isn&#39;t on this server/.test(await res.text()));
+
+    const hookPath = hookUrl.replace(/^http:\/\/[^/]+/, '');
+    mark = fake.calls.length;
+    res = await fetch(base + hookPath, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: 'Server restarted @everyone', username: 'MC' }) });
+    await fake.settle();
+    const hookSend = fake.callsSince(mark).find((c) => c.kind === 'send');
+    check('a webhook message is posted, and never pings', res.status === 204 && hookSend && /Server restarted/.test(hookSend.body.content) && JSON.stringify(hookSend.body.allowed_mentions) === JSON.stringify({ parse: [], roles: [] }), `${res.status} ${JSON.stringify(hookSend?.body)}`);
+    res = await fetch(base + hookPath, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: 'Backup finished' });
+    check('plain-text webhook bodies work too', res.status === 204);
+    res = await fetch(base + hookPath.replace(/[^/]+$/, 'wrong-secret'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"content":"x"}' });
+    check('a wrong webhook secret is refused', res.status === 404);
+    res = await fetch(base + hookPath, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{nope' });
+    check('broken JSON gets a clear 400', res.status === 400 && /invalid JSON/.test(await res.text()));
+    await setModuleOn(IDS.guild, 'addons', false);
+    res = await fetch(base + hookPath, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"content":"x"}' });
+    check('with add-ons switched off, webhooks are refused', res.status === 403);
+    await setModuleOn(IDS.guild, 'addons', true);
+
+    const hookAddon = await prisma.addon.findFirst({ where: { kind: 'webhook' } });
+    res = await fetch(`${base}/addons/${hookAddon.id}/delete`, { method: 'POST', redirect: 'manual', headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf }) });
+    check('add-ons can be removed from the dashboard', res.status === 303 && (await prisma.addon.count({ where: { kind: 'webhook' } })) === 0);
+    a = await cmd('addons', { sub: 'remove', user: IDS.admin, options: [opt.int('id', feedAddon.id)] });
+    check('/addons remove', (await prisma.addon.count()) === 0, a.text);
+    await new Promise((r2) => srv.close(r2));
+    await new Promise((r2) => feedSrv.close(r2));
     takeLog();
   }
 

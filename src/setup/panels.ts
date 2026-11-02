@@ -1542,6 +1542,17 @@ const panels: Record<PanelId, Panel> = {
         ? null
         : 'This needs **Message Content** (ENABLE_MESSAGE_CONTENT) to read messages.',
   ),
+  addons: simplePanel(
+    'addons',
+    '🧩 Add-ons',
+    'Have the bot post from other places: news feeds and patch notes, Steam game news, Epic free games, your game server going up or down, and messages from other apps (webhooks).',
+    [
+      '`/addons add type:Steam game news channel:#patch-notes target:730`',
+      '`/addons add type:RSS / Atom feed channel:#news target:https://...`',
+      '`/addons list`, `/addons test` and `/addons remove`',
+      'Or use the **Add-ons** page of the web dashboard (`/dashboard`).',
+    ],
+  ),
   announcements: simplePanel(
     'announcements',
     '📣 Announcements',
