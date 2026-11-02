@@ -69,7 +69,7 @@ Before changing anything, also read §10 (architecture), §16 (decisions already
 - [x] Auto-mod: spam/flood detection, invite-link filtering, word/phrase filter, mention-spam limits
 - [x] Configurable mod-log channel with rich embeds per action
 - [x] Role-based permission gates for every command (not just Discord's built-in permissions)
-- [x] Slash-command-first UX with legacy prefix support as opt-in (see §17: no in-Discord switch yet)
+- [x] Slash-command-first UX with legacy prefix support as opt-in (switch and prefix in `/setup`)
 - [x] Basic utility: userinfo, serverinfo, remind-me, simple polls
 
 ### Near-term (v1.x)
@@ -101,13 +101,29 @@ Before changing anything, also read §10 (architecture), §16 (decisions already
 - [x] Group listening — `/jam` launches Discord's own YouTube Watch Together (zero cost, default); `/music` is the opt-in heavy player (see §16)
 - [x] `/setup` feature map — every module listed with status, per-feature channel/role mapping, on/off switch per module, Skip on every screen
 
+### All-in-one assistant (2026-11-01)
+
+Chosen from what the most-used all-in-one bots (Dyno, Carl-bot, MEE6) are relied on for, with logging and tickets first, since those are the features most often paid for elsewhere.
+
+- [x] Moderation essentials: `/purge` (filters: member, bots, text), `/slowmode`, `/lock` / `/unlock`, `/unban` (with a case), `/role add|remove`
+- [x] Server logs: message edits/deletes, joins/leaves, nickname/role changes, voice, channel and role changes, bans (including outside the bot), each switchable
+- [x] Message text in logs: opt-in, with a retention period after which the bot edits the text out
+- [x] Support tickets: panel button → private thread with the staff role; close saves a transcript
+- [x] Suggestions with vote buttons and staff approve/deny (author DM'd)
+- [x] Giveaways: button entry, automatic draw, reroll
+- [x] Join roles and a Verify button
+- [x] Auto-responders (trigger phrases, 30 s cooldown per channel)
+- [x] Announcements: now, later, daily or weekly
+- [x] Join-to-create voice rooms with `/voice` controls
+- [x] `/help`, generated from the module registry
+
 All of these can be switched off per server from `/setup`; a host running a pure moderation setup pays no resource cost for the ones nobody uses (their background jobs skip switched-off servers, and `/music`'s code isn't even loaded unless the host enables it).
 
 ### Forward-thinking (v2+)
 
 - [ ] Optional AI-assisted triage — flag likely-toxic messages for human review (never auto-action without a human-in-the-loop toggle)
 - [ ] Plugin architecture so a host can drop in a custom command/module without forking core
-- [ ] Web dashboard (self-hosted, same box) as an alternative to slash-command config — explicitly optional, bot must be fully usable without it
+- [x] Web dashboard (self-hosted, same box) as an alternative to slash-command config — explicitly optional, bot must be fully usable without it. Built 2026-11-01: `ENABLE_DASHBOARD`, sign-in by one-time link from `/dashboard` (see §10, §16)
 - [ ] Cross-server ban-list sharing for trusted server networks (opt-in, host-controlled trust list — never a shared cloud service by default)
 - [ ] Cross-server announcement broadcasting for server networks (opt-in, distinct from the ban-list sharing above)
 - [ ] Audit-log export (CSV/JSON) for servers that need compliance records
@@ -138,11 +154,13 @@ What has to exist before this counts as "actually self-hostable," not just runna
 ## 7. Security & Privacy Guidelines
 
 - Bot token, database credentials, and any AI/API keys stay in `.env` — never committed, `.gitignore` covers it from day one.
-- Store only what moderation actually needs: message content is logged for auto-mod matches only when the host opts in, and even then should be truncatable/expirable via a retention setting. (Today content is never stored — see §17 for the missing opt-in switch.)
+- Store only what moderation actually needs: message content is logged for auto-mod matches only when the host opts in, and even then should be truncatable/expirable via a retention setting. (Built: "Keep message text" in `/setup` → Auto-mod or Server logs, off by default, with a 1–365 day period. Every log message that includes text is recorded in `content_log_messages`, and the slow scheduler tick edits the text out when it expires.)
 - Every mod action logged with actor, target, reason, and timestamp — this is for the host's own accountability and dispute resolution, not for us.
 - Default to the least-privileged Discord intents and permissions; document exactly which ones are required vs. optional and why.
 - If AI-assisted moderation ships, message content sent to an external API must be opt-in, clearly disclosed in docs, and the host must supply their own API key — never proxied through a service the project runs.
 - No phone-home telemetry, analytics, or update-check pinging without an explicit, off-by-default opt-in the host can see in the config. The only network calls besides Discord and the integrations a host configures are both opt-in: the auto-updater (`COMPOSE_PROFILES=autoupdate`) and yt-dlp updating itself (only with music on, `MUSIC_AUTO_UPDATE`). Prisma's CLI update check is switched off (`CHECKPOINT_DISABLE=1`).
+
+Web dashboard (opt-in): listens on 127.0.0.1 unless the host changes it; no passwords (one-time `/dashboard` links, 10 minutes, single use); sessions are in memory and bound to one person and one server; admin rights are re-checked against Discord on every request; CSRF token on every form; `HttpOnly`, `SameSite=Lax` cookie (`Secure` with an https `DASHBOARD_URL`); no scripts and a `default-src 'none'` Content-Security-Policy; every Discord- or member-supplied string is escaped; submitted channel and role IDs must exist on that server, and roles the bot hands out pass the same hierarchy check as in Discord.
 
 Also in place: the bot never pings `@everyone`, `@here` or roles on anyone's behalf (`allowedMentions: users` client-wide); members can't moderate or hand out roles at or above their own highest role, or above the bot's; `/music` only fetches YouTube URLs (no arbitrary URLs, so it can't be pointed at the host's network) and passes queries after `--` so they can't become yt-dlp flags.
 
@@ -159,10 +177,11 @@ Also in place: the bot never pings `@everyone`, `@here` or roles on anyone's beh
 
 ## 9. Current Status (2026-11-01)
 
-- **Everything in Core, v1.x and Fun/Game is built and merged to `main`** (PR #1, PR #3). 37 slash commands, 73 including subcommands; 21 modules that can be switched off per server.
-- **Checks:** 112 unit tests; CI green on `main`; an end-to-end check (§15) passed 145/145 checks (149/149 with music on).
-- **Images published:** the first `main` build pushed `ghcr.io/bessv2/discordbot:latest` and `:music` (amd64 + arm64) on 2026-10-31.
-- **Not yet verified against live Discord:** voice playback for `/music`, launching Watch Together from `/jam`, and a host pulling the published images. Everything else was exercised end to end against a simulated Discord, not a real one.
+- **Everything in Core, v1.x, Fun/Game and the all-in-one assistant set is built** (PR #1, PR #3 merged; the assistant set in the PR after #5). 52 slash commands, 117 including subcommands; 30 modules that can be switched off per server.
+- **Web dashboard** (optional, off by default) built on top: the same settings as `/setup` plus the case history, in a browser.
+- **Checks:** 141 unit tests; the end-to-end check (§15) passes 237/237 (241/241 with music on) and runs in CI on every PR.
+- **Images published:** `main` builds pushed only `sha-…` tags, not `:latest` / `:music`: those were gated on `{{is_default_branch}}`, and the repo's default branch isn't `main` yet, so `docker compose up -d` failed with `not found`. Fixed 2026-11-01 by tying them to `refs/heads/main`; they appear with the next push to `main`.
+- **Not yet verified against live Discord:** voice playback for `/music`, launching Watch Together from `/jam`, a host pulling the published images, and the dashboard behind a real reverse proxy. Everything else was exercised end to end against a simulated Discord, not a real one.
 - **Owner to-dos (GitHub settings, can't be done from code):**
   - [ ] Set the repo's default branch to `main` (Settings → General).
   - [ ] Make the repo public, so others can download it.
@@ -179,24 +198,32 @@ src/
                       commandSync (auto-registers slash commands), deployCommands (manual fallback),
                       prefixHandler (legacy !commands)
   events/             one file per Discord event (ready, interactionCreate, messageCreate, reactions,
-                      guildMemberAdd/Remove, presenceUpdate)
-  commands/           one file per slash command, grouped moderation/ utility/ setup/ fun/
-  setup/              /setup feature map: status.ts (pure status logic) and panels.ts (one screen per feature)
+                      guildMemberAdd/Remove, presenceUpdate, channelCreate, voiceStateUpdate)
+  commands/           one file per slash command, grouped moderation/ utility/ setup/ community/ fun/
+  features/           tickets, giveaways, suggestions, joinRoles (+ Verify), autoResponders,
+                      announcements, tempVoice: the logic and buttons behind the community commands
+  serverlog/          events.ts (event kinds, switches, posting) and handlers.ts (one per Discord event)
+  setup/              /setup feature map: status.ts (pure status logic), hostFacts.ts, and panels.ts (one screen per feature)
+  dashboard/          optional web dashboard: fields.ts (what each page edits + pure validation), auth.ts (sign-in
+                      links, sessions), render.ts (HTML), server.ts (express routes), url.ts
   lib/                shared logic: db, logger, permissions, modules (registry + on/off), caseManager,
                       modlog, moderationActions/Guard, muteActions, raidActions/Guard, appealActions,
                       xp, economy/walletActions, starboard, reactionRoles, activityRoles, lfgActions,
                       bracket, dice, duration, maps, template, steam/riot/twitch/youtube clients, healthcheck
   automod/            spam, invite, wordFilter, mentionSpam, and the runner
-  scheduler/          one scheduler: fast tick 15s (reminders, mute expiry, spam-log sweep),
-                      slow tick 5min (birthdays, stream polling)
+  scheduler/          one scheduler: fast tick 15s (reminders, mute expiry, giveaway draws,
+                      announcements, spam-log sweep), slow tick 5min (birthdays, stream polling,
+                      expiring message text in logs)
   reminders/ birthdays/ streaming/ xp/   jobs and engines used by the scheduler and events
   music/              resolve.ts (yt-dlp lookups, pure parsing), player.ts (voice; lazy-loaded), check.ts
   data/               built-in trivia questions
 prisma/               schema.prisma + migrations (applied automatically by docker-entrypoint.sh)
-tests/                vitest unit tests
+tests/                vitest unit tests; tests/e2e: end-to-end check against a simulated Discord
 docs/                 BACKUP, UPGRADING, TESTING, RAILWAY
 .github/workflows/    docker-image.yml: checks + image builds
 ```
+
+**Buttons.** Feature buttons (`ticket_open`, `ticket_close:<id>`, `giveaway_enter:<id>`, `suggestion_vote:<id>:up|down`, `verify`) are routed by a small table in `interactionCreate`; each handler checks its own module switch, since buttons outlive the command that posted them. `/setup` and appeals use their own collectors/prefixes.
 
 **How a slash command runs.** `interactionCreate` looks up the command, checks the permission gate (`lib/permissions.ts`: Administrator always passes; if a server picked roles for the command's scope — moderation/admin/utility — those roles decide; otherwise the command's native Discord permission does), then checks the module switch (`lib/modules.ts`: a switched-off module's commands reply that it's off), then runs it. Errors are caught and logged; the member sees a short apology.
 
@@ -206,41 +233,56 @@ docs/                 BACKUP, UPGRADING, TESTING, RAILWAY
 
 **Command registration.** On every start, `commandSync.ts` hashes the command definitions plus the application ID and target (global, or one guild if `DISCORD_GUILD_ID` is set) and only calls Discord when the hash differs from `data/.commands-hash`.
 
+**Web dashboard.** Off unless `ENABLE_DASHBOARD=true`; `index.ts` then imports `dashboard/server.ts` (and with it express) and listens on `DASHBOARD_HOST:DASHBOARD_PORT`. `/dashboard` makes a one-time token (in memory) and replies ephemerally with `DASHBOARD_URL/login?t=…`; opening it starts a 12-hour session for that user and server and redirects to `/`. Every other route goes through one middleware that loads the session, fetches the member from Discord and runs the same admin gate as `/setup`, and checks the CSRF token on POSTs. Pages: the feature map with on/off buttons (`setModuleOn`, the same code as `/setup`), one settings form per feature built from `PAGES` in `fields.ts`, and `/cases`. Saving validates every field first (`parseField`, pure) and writes nothing if any is wrong. No database changes: it reads and writes the same `GuildConfig` and `permission_roles` rows.
+
 **Music.** `/jam` only creates a Watch Together invite. `/music` dynamically imports `music/player.ts` (and with it `@discordjs/voice`) only when `ENABLE_MUSIC=true`. Per server: one voice connection, a queue (max 200), and a `yt-dlp → ffmpeg → Ogg/Opus` pipeline per track; it leaves after 5 minutes idle or when the channel has had no humans for two 30-second checks.
 
 ## 11. Commands
 
 Scope is the permission gate's scope; the bracket is the Discord permission used when the server hasn't picked roles for that scope. "core" means it can't be switched off (or is controlled by its own setting, e.g. XP, economy, welcome).
 
-| Command                                                      | Subcommands                                                                                          | Scope (default permission)             | Module                |
-| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | -------------------------------------- | --------------------- |
-| `/warn` `/kick` `/ban` `/timeout` `/mute` `/unmute` `/cases` | —                                                                                                    | moderation (Moderate/Kick/Ban Members) | core                  |
-| `/userinfo` `/serverinfo`                                    | —                                                                                                    | utility                                | core                  |
-| `/remind`                                                    | —                                                                                                    | utility                                | reminders             |
-| `/poll`                                                      | —                                                                                                    | utility                                | polls                 |
-| `/setup`                                                     | —                                                                                                    | admin (Manage Server)                  | core                  |
-| `/config`                                                    | view, modlog, automod, wordfilter, permissions, antiraid, channel-override, appeal-channel, birthday | admin (Manage Server)                  | core                  |
-| `/lockdown`                                                  | — (state on/off)                                                                                     | admin (Manage Server)                  | core                  |
-| `/xp`                                                        | set, role-reward                                                                                     | admin (Manage Server)                  | core (xpEnabled)      |
-| `/rank` `/leaderboard`                                       | —                                                                                                    | utility                                | core                  |
-| `/economy`                                                   | balance, daily, slots, give, take                                                                    | utility (give/take need mod rights)    | core (economyEnabled) |
-| `/welcome`                                                   | set, goodbye-set, test                                                                               | admin (Manage Server)                  | core (welcomeEnabled) |
-| `/tag`                                                       | create, edit, delete, list, show                                                                     | utility                                | tags                  |
-| `/roll` `/coinflip` `/8ball`                                 | —                                                                                                    | utility                                | fun                   |
-| `/quote`                                                     | add, random, list, delete                                                                            | utility                                | quotes                |
-| `/reactionrole`                                              | create, remove, list                                                                                 | admin (Manage Roles)                   | reactionroles         |
-| `/starboard`                                                 | config, disable                                                                                      | admin (Manage Server)                  | starboard             |
-| `/trivia`                                                    | start, stop, import                                                                                  | utility (import needs mod rights)      | trivia                |
-| `/birthday`                                                  | set, remove, today                                                                                   | utility                                | birthdays             |
-| `/gameserver`                                                | —                                                                                                    | utility                                | gameservers           |
-| `/gamestats`                                                 | steam, lol                                                                                           | utility                                | gameservers           |
-| `/streamwatch`                                               | add, remove, list                                                                                    | admin (Manage Server)                  | streams               |
-| `/activityrole`                                              | add, remove, list                                                                                    | admin (Manage Roles)                   | activityroles         |
-| `/lfg`                                                       | —                                                                                                    | utility                                | lfg                   |
-| `/tournament`                                                | create, join, leave, start, report, view                                                             | utility                                | tournaments           |
-| `/map`                                                       | add, remove, list, random, vote                                                                      | utility (add/remove need mod rights)   | maps                  |
-| `/jam`                                                       | —                                                                                                    | utility                                | music                 |
-| `/music`                                                     | play, skip, pause, resume, queue, shuffle, remove, stop                                              | utility (DJ role, if set)              | music                 |
+| Command                                                      | Subcommands                                                                                          | Scope (default permission)                 | Module                |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------- | ------------------------------------------ | --------------------- |
+| `/warn` `/kick` `/ban` `/timeout` `/mute` `/unmute` `/cases` | —                                                                                                    | moderation (Moderate/Kick/Ban Members)     | core                  |
+| `/userinfo` `/serverinfo`                                    | —                                                                                                    | utility                                    | core                  |
+| `/remind`                                                    | —                                                                                                    | utility                                    | reminders             |
+| `/poll`                                                      | —                                                                                                    | utility                                    | polls                 |
+| `/setup`                                                     | —                                                                                                    | admin (Manage Server)                      | core                  |
+| `/config`                                                    | view, modlog, automod, wordfilter, permissions, antiraid, channel-override, appeal-channel, birthday | admin (Manage Server)                      | core                  |
+| `/lockdown`                                                  | — (state on/off)                                                                                     | admin (Manage Server)                      | core                  |
+| `/xp`                                                        | set, role-reward                                                                                     | admin (Manage Server)                      | core (xpEnabled)      |
+| `/rank` `/leaderboard`                                       | —                                                                                                    | utility                                    | core                  |
+| `/economy`                                                   | balance, daily, slots, give, take                                                                    | utility (give/take need mod rights)        | core (economyEnabled) |
+| `/welcome`                                                   | set, goodbye-set, test                                                                               | admin (Manage Server)                      | core (welcomeEnabled) |
+| `/tag`                                                       | create, edit, delete, list, show                                                                     | utility                                    | tags                  |
+| `/roll` `/coinflip` `/8ball`                                 | —                                                                                                    | utility                                    | fun                   |
+| `/quote`                                                     | add, random, list, delete                                                                            | utility                                    | quotes                |
+| `/reactionrole`                                              | create, remove, list                                                                                 | admin (Manage Roles)                       | reactionroles         |
+| `/starboard`                                                 | config, disable                                                                                      | admin (Manage Server)                      | starboard             |
+| `/trivia`                                                    | start, stop, import                                                                                  | utility (import needs mod rights)          | trivia                |
+| `/birthday`                                                  | set, remove, today                                                                                   | utility                                    | birthdays             |
+| `/gameserver`                                                | —                                                                                                    | utility                                    | gameservers           |
+| `/gamestats`                                                 | steam, lol                                                                                           | utility                                    | gameservers           |
+| `/streamwatch`                                               | add, remove, list                                                                                    | admin (Manage Server)                      | streams               |
+| `/activityrole`                                              | add, remove, list                                                                                    | admin (Manage Roles)                       | activityroles         |
+| `/lfg`                                                       | —                                                                                                    | utility                                    | lfg                   |
+| `/tournament`                                                | create, join, leave, start, report, view                                                             | utility                                    | tournaments           |
+| `/map`                                                       | add, remove, list, random, vote                                                                      | utility (add/remove need mod rights)       | maps                  |
+| `/jam`                                                       | —                                                                                                    | utility                                    | music                 |
+| `/music`                                                     | play, skip, pause, resume, queue, shuffle, remove, stop                                              | utility (DJ role, if set)                  | music                 |
+| `/purge`                                                     | — (amount, user, bots_only, contains)                                                                | moderation (Manage Messages)               | core                  |
+| `/slowmode` `/lock` `/unlock`                                | —                                                                                                    | moderation (Manage Channels)               | core                  |
+| `/unban`                                                     | —                                                                                                    | moderation (Ban Members)                   | core                  |
+| `/role`                                                      | add, remove                                                                                          | moderation (Manage Roles)                  | core                  |
+| `/help`                                                      | — (command)                                                                                          | utility                                    | core                  |
+| `/dashboard`                                                 | —                                                                                                    | admin (Manage Server)                      | core                  |
+| `/ticket`                                                    | panel, close, add, remove                                                                            | utility (panel: admins; add/remove: staff) | tickets               |
+| `/giveaway`                                                  | start, end, reroll, list                                                                             | moderation (Manage Server)                 | giveaways             |
+| `/suggest`                                                   | — (idea)                                                                                             | utility                                    | suggestions           |
+| `/suggestion`                                                | approve, deny                                                                                        | moderation (Manage Server)                 | suggestions           |
+| `/autoresponder`                                             | add, remove, list                                                                                    | admin (Manage Server)                      | autoresponders        |
+| `/announce`                                                  | send, list, cancel                                                                                   | admin (Manage Server)                      | announcements         |
+| `/voice`                                                     | rename, limit, lock, unlock                                                                          | utility (room owner or mods)               | tempvoice             |
 
 Legacy prefix commands (`!warn`, `!kick`, `!ban`, `!cases`) exist behind `ENABLE_PREFIX_COMMANDS` + `ENABLE_MESSAGE_CONTENT` and a per-server flag (§17).
 
@@ -248,47 +290,51 @@ Legacy prefix commands (`!warn`, `!kick`, `!ban`, `!cases`) exist behind `ENABLE
 
 Host-level settings live in `.env` (documented line by line in `.env.example`); everything per-server is set in Discord. Only `DISCORD_TOKEN` is required.
 
-| Variable                                                      | Default                  | What it does                                                            |
-| ------------------------------------------------------------- | ------------------------ | ----------------------------------------------------------------------- |
-| `DISCORD_TOKEN`                                               | — (required)             | Bot token from the Developer Portal → Bot. Trimmed of stray whitespace. |
-| `DISCORD_CLIENT_ID`                                           | looked up from the token | Only kept for older setups / `deploy-commands`.                         |
-| `DISCORD_GUILD_ID`                                            | empty (global commands)  | Developers: register commands in one server instantly.                  |
-| `DATABASE_URL`                                                | `file:../data/bot.db`    | Relative to `prisma/`, so it lands in `./data` (§16).                   |
-| `ENABLE_MESSAGE_CONTENT`                                      | false                    | Privileged intent: invite/word filters, mention spam, prefix commands.  |
-| `ENABLE_PREFIX_COMMANDS`, `PREFIX`                            | false, `!`               | Legacy `!` commands.                                                    |
-| `ENABLE_GUILD_MEMBERS`                                        | false                    | Privileged intent: welcome/goodbye, anti-raid, birthday-role cleanup.   |
-| `ENABLE_PRESENCE`                                             | false                    | Privileged intent: `/activityrole`.                                     |
-| `ENABLE_MUSIC`                                                | false                    | Turns on `/music` (needs the `music` image, or ffmpeg + yt-dlp).        |
-| `MUSIC_AUTO_UPDATE`                                           | true                     | With music on, update yt-dlp at each start.                             |
-| `BOT_IMAGE_TAG`                                               | `latest`                 | Compose only: `latest` or `music`.                                      |
-| `COMPOSE_PROFILES`                                            | empty                    | Compose only: `autoupdate` turns on the daily updater.                  |
-| `TZ`                                                          | UTC                      | Time zone for the 04:00 update check.                                   |
-| `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `YOUTUBE_API_KEY` | empty                    | Stream alerts.                                                          |
-| `STEAM_API_KEY`, `RIOT_API_KEY`                               | empty                    | `/gamestats`.                                                           |
-| `LOG_LEVEL`, `NODE_ENV`                                       | info, production         | Logging.                                                                |
-| `CHECKPOINT_DISABLE`                                          | 1                        | Turns off Prisma's CLI update check (already set in the image).         |
+| Variable                                                      | Default                    | What it does                                                            |
+| ------------------------------------------------------------- | -------------------------- | ----------------------------------------------------------------------- |
+| `DISCORD_TOKEN`                                               | — (required)               | Bot token from the Developer Portal → Bot. Trimmed of stray whitespace. |
+| `DISCORD_CLIENT_ID`                                           | looked up from the token   | Only kept for older setups / `deploy-commands`.                         |
+| `DISCORD_GUILD_ID`                                            | empty (global commands)    | Developers: register commands in one server instantly.                  |
+| `DATABASE_URL`                                                | `file:../data/bot.db`      | Relative to `prisma/`, so it lands in `./data` (§16).                   |
+| `ENABLE_MESSAGE_CONTENT`                                      | false                      | Privileged intent: invite/word filters, mention spam, prefix commands.  |
+| `ENABLE_PREFIX_COMMANDS`, `PREFIX`                            | false, `!`                 | Legacy `!` commands.                                                    |
+| `ENABLE_GUILD_MEMBERS`                                        | false                      | Privileged intent: welcome/goodbye, anti-raid, birthday-role cleanup.   |
+| `ENABLE_PRESENCE`                                             | false                      | Privileged intent: `/activityrole`.                                     |
+| `ENABLE_MUSIC`                                                | false                      | Turns on `/music` (needs the `music` image, or ffmpeg + yt-dlp).        |
+| `MUSIC_AUTO_UPDATE`                                           | true                       | With music on, update yt-dlp at each start.                             |
+| `BOT_IMAGE_TAG`                                               | `latest`                   | Compose only: `latest` or `music`.                                      |
+| `COMPOSE_PROFILES`                                            | empty                      | Compose only: `autoupdate` turns on the daily updater.                  |
+| `TZ`                                                          | UTC                        | Time zone for the 04:00 update check.                                   |
+| `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `YOUTUBE_API_KEY` | empty                      | Stream alerts.                                                          |
+| `STEAM_API_KEY`, `RIOT_API_KEY`                               | empty                      | `/gamestats`.                                                           |
+| `LOG_LEVEL`, `NODE_ENV`                                       | info, production           | Logging.                                                                |
+| `CHECKPOINT_DISABLE`                                          | 1                          | Turns off Prisma's CLI update check (already set in the image).         |
+| `ENABLE_DASHBOARD`                                            | false                      | Turns on the web dashboard and `/dashboard` sign-in links.              |
+| `DASHBOARD_PORT`                                              | 3000                       | Dashboard port. Compose publishes it on 127.0.0.1 only when it's set.   |
+| `DASHBOARD_HOST`                                              | 127.0.0.1 (image: 0.0.0.0) | Address the dashboard listens on.                                       |
+| `DASHBOARD_URL`                                               | `http://localhost:PORT`    | Public address for sign-in links (reverse proxy, tunnel, Railway).      |
 
-Intents: Guilds, GuildMessages, GuildMessageReactions and GuildVoiceStates are always on (none privileged). The three privileged ones are opt-in via the flags above. Invite permissions requested (explicit list, never Administrator): View Channels, Send Messages, Embed Links, Read Message History, Add Reactions, Manage Messages, Kick, Ban, Moderate Members, Manage Roles, Manage Channels, Create Invite, Create Polls, Connect, Speak.
+Intents: Guilds, GuildMessages, GuildMessageReactions, GuildVoiceStates and GuildModeration (bans done outside the bot, for server logs) are always on (none privileged). The three privileged ones are opt-in via the flags above. Invite permissions requested (explicit list, never Administrator): View Channels, Send Messages, Embed Links, Read Message History, Add Reactions, Manage Messages, Kick, Ban, Moderate Members, Manage Roles, Manage Channels, Create Invite, Create Polls, Connect, Speak, Create Private Threads, Send Messages in Threads, Manage Threads, Attach Files, Move Members. No new env vars were needed for the all-in-one set: everything is configured per server in `/setup`. Blank values in `.env` (`DASHBOARD_PORT=`) mean "use the default".
 
 ## 13. Deployment & Updates
 
 - **Images.** `.github/workflows/docker-image.yml` runs typecheck, lint, tests and build, then builds `ghcr.io/bessv2/discordbot:latest` and `:music` for linux/amd64 and linux/arm64 (64-bit Raspberry Pi). Published on push to `main`, on `v*` tags (versioned tags too) and weekly (fresh Alpine/Node fixes and yt-dlp); PRs only test-build (amd64, nothing pushed). The `music` image is built with `MUSIC=true` (ffmpeg, python3, yt-dlp's official release).
-- **Compose.** `docker-compose.yml` pulls the image (`BOT_IMAGE_TAG`), mounts `./data`, `restart: unless-stopped`. `docker-compose.build.yml` overrides it to build from source.
+- **Compose.** `docker-compose.yml` pulls the image (`BOT_IMAGE_TAG`), mounts `./data`, `restart: unless-stopped`, and publishes the dashboard port on 127.0.0.1 only: `127.0.0.1:${DASHBOARD_PORT:-}:${DASHBOARD_PORT:-3000}`, so with `DASHBOARD_PORT` unset Docker picks a random free port and the line can never clash with another service on 3000. The image sets `DASHBOARD_HOST=0.0.0.0` (inside the container). `docker-compose.build.yml` overrides it to build from source.
 - **Startup** (`docker-entrypoint.sh`): `prisma migrate deploy`, then (music only) `yt-dlp -U`, then the bot.
 - **Updates.** Manual: `docker compose pull && docker compose up -d`. Automatic (opt-in): `COMPOSE_PROFILES=autoupdate` adds `nickfedor/watchtower:1.23.2`, which only updates containers labelled `com.centurylinklabs.watchtower.enable=true` (just the bot), daily at 04:00, and cleans up old images.
 - **Other paths.** Railway builds the Dockerfile itself (`docs/RAILWAY.md`; set `MUSIC=true` there for music). Bare Node: `npm ci && npm run build && npm run db:migrate && npm start`, with pm2.
 
 ## 14. Data Model
 
-SQLite through Prisma; every table is per-server and cascades when a server's config row is deleted. `guild_configs` holds every per-server setting (mod-log, auto-mod thresholds, anti-raid, mute role, appeal channel, XP, starboard, welcome, birthdays, economy, `disabledModules`, `musicDjRoleId`). The other tables: `permission_roles`, `cases`, `reminders`, `polls`, `mutes`, `channel_automod_overrides`, `appeals`, `tags`, `user_xp`, `level_role_rewards`, `starboard_posts`, `birthdays`, `quotes`, `reaction_roles`, `wallets`, `trivia_questions`, `stream_notifications`, `lfg_posts`, `tournaments`, `voice_activity_roles`, `map_pools`.
+SQLite through Prisma; every table is per-server and cascades when a server's config row is deleted. `guild_configs` holds every per-server setting (mod-log, auto-mod thresholds, anti-raid, mute role, appeal channel, XP, starboard, welcome, birthdays, economy, `disabledModules`, `musicDjRoleId`, server-log channel and event switches, ticket staff role and transcript channel, suggestions channel, join roles, verified role, join-to-create hub). The other tables: `permission_roles`, `cases`, `reminders`, `polls`, `mutes`, `channel_automod_overrides`, `appeals`, `tags`, `user_xp`, `level_role_rewards`, `starboard_posts`, `birthdays`, `quotes`, `reaction_roles`, `wallets`, `trivia_questions`, `stream_notifications`, `lfg_posts`, `tournaments`, `voice_activity_roles`, `map_pools`, `content_log_messages`, `tickets`, `giveaways`, `giveaway_entries`, `suggestions`, `suggestion_votes`, `auto_responders`, `temp_voice_channels`, `scheduled_messages`.
 
-Migrations, in order: `init` (v1 core) → `add_v1x_and_fun_modules` → `add_prelockdown_verification_level` → `add_setup_modules_maps_music`. Case numbers are per server and assigned inside a transaction so two moderators can't get the same number.
+Migrations, in order: `init` (v1 core) → `add_v1x_and_fun_modules` → `add_prelockdown_verification_level` → `add_setup_modules_maps_music` → `add_assistant_features` (hand-trimmed to `ADD COLUMN`s; tested by upgrading a populated database). Case numbers are per server and assigned inside a transaction so two moderators can't get the same number.
 
 ## 15. Testing & Verification
 
-- **Unit tests** (`npm test`, 112): auto-mod detectors, permission gate, role hierarchy and role-assign checks, durations, dice, economy payouts and daily reset, XP curve, raid detection, brackets, activity-role matching, module switches and registry consistency, map parsing, music query classification and yt-dlp output parsing, `/setup` status logic.
+- **Unit tests** (`npm test`, 141): auto-mod detectors, permission gate, role hierarchy and role-assign checks, durations, dice, economy payouts and daily reset, XP curve, raid detection, brackets, activity-role matching, module switches and registry consistency, map parsing, music query classification and yt-dlp output parsing, `/setup` status logic, purge selection, auto-responder matching, announcement repeats, ticket transcripts, server-log switches, message-text redaction, dashboard sign-in tokens and sessions, field validation, and HTML escaping.
 - **CI**: the same checks on every PR, plus test builds of both images.
-- **End-to-end check** (2026-10-31, not committed to the repo): the real bot code and a real SQLite database, with discord.js's network layer replaced by a simulated Discord that records every API call. It drove all 37 commands, every `/setup` screen and button, auto-mod and XP via message events, reaction roles, starboard, welcome, appeals, and the scheduler jobs: 145/145 checks, 149/149 with music on. The yt-dlp → ffmpeg → Opus pipeline was checked with a stand-in yt-dlp (3 s of audio → 151 Opus packets). It found two bugs, both fixed: `/unmute` not recording a case, and module switches failing for a server with no settings row.
+- **End-to-end check** (`npm run build && npm run test:e2e`, `tests/e2e/`, runs in CI): the real bot code and a real SQLite database, with discord.js's network layer replaced by a simulated Discord that records every API call. It drives all 52 commands, every `/setup` screen and button, auto-mod, XP and auto-responders via message events, reaction roles, starboard, welcome, join roles and Verify, appeals, tickets (thread, transcript, close), giveaways, suggestions, server logs (deletes, edits, roles, bans, voice), join-to-create voice, the scheduler jobs, and the web dashboard over real HTTP (sign-in link used once, CSRF refusal, toggles, saving and refusing settings, role hierarchy, XSS escaping, a non-admin session ended, sign-out): 237/237 checks, 241/241 with music on (`-- --music`). The yt-dlp → ffmpeg → Opus pipeline was checked separately with a stand-in yt-dlp (3 s of audio → 151 Opus packets). Bugs it has found and that were fixed: `/unmute` not recording a case, module switches failing for a server with no settings row, and `/unban` trusting a stale ban cache.
 - **Manual test walkthrough** for a fresh server: `docs/TESTING.md`.
 
 ## 16. Decision Log
@@ -308,22 +354,36 @@ Decisions already made, so they don't get relitigated. Newest last.
 - **2026-10-31 — Node 22 LTS** (Node 20 end-of-life; `@discordjs/voice` 0.19 needs 22.12+). `@discordjs/voice` is an optional dependency so a failed install never breaks the bot.
 - **2026-10-31 — Additive migrations:** Prisma's generated table rebuild for the latest migration was replaced with plain `ADD COLUMN`s, verified with `prisma migrate diff` and by upgrading a populated database.
 - **2026-11-01 — This file was renamed from `CLAUDE.md` to `PROJECT.md`** and expanded into full project notes. A one-line `CLAUDE.md` imports it so Claude Code still loads these rules automatically.
+- **2026-11-01 — Tickets are private threads, not channels:** no category or per-ticket channel permissions to manage, and they need no Server Boost. Mentioning the staff role adds staff to the thread.
+- **2026-11-01 — Message-text retention edits the log message**, because the text only ever lives in Discord (the mod-log or server-log message), never in the database. Each such message is recorded with an expiry, and the slow tick replaces the text fields with "(removed after N days)".
+- **2026-11-01 — "Not set up yet" is its own state** (◽) on the feature map, so a fresh server isn't covered in ⚠️ warnings for features that simply need a channel picked. ⚠️ now means "on, but something's wrong".
+- **2026-11-01 — Web dashboard runs inside the bot, off by default.** No second container or service; express is only loaded when `ENABLE_DASHBOARD=true`. Server-rendered forms with no JavaScript, so there's no front-end build and nothing for a CSP to let through.
+- **2026-11-01 — Dashboard sign-in is a one-time link from `/dashboard`, not Discord OAuth.** OAuth would need the host to register a redirect URL and keep a client secret, and only works on a fixed public address; a link from an ephemeral slash-command reply proves who the person is and that they're an admin, with nothing to configure. Sessions live in memory (a restart signs everyone out) and need no schema change.
+- **2026-11-01 — The dashboard is local-only by default** (127.0.0.1, and compose publishes on 127.0.0.1). Remote access is the host's explicit choice: SSH tunnel, VPN, or an HTTPS reverse proxy with `DASHBOARD_URL`.
+- **2026-11-01 — `latest` / `music` image tags follow `main` itself** (`github.ref == 'refs/heads/main'`), not `{{is_default_branch}}`, so they can't silently go missing when the default branch is something else.
+- **2026-11-01 — `/setup` has one menu per group** (Moderation, Community, Games & fun), because a Discord menu holds at most 25 options and there are now 33 features.
 
 ## 17. Known Gaps & Open Items
 
-- **Legacy `!` commands can't be turned on from Discord.** The per-server `prefixCommandsOn` flag has no `/setup` or `/config` switch yet, so enabling them needs a database edit even with `ENABLE_PREFIX_COMMANDS=true`.
-- **Message-content logging has no opt-in switch.** `logMessageContent` and `contentRetainDays` exist in the schema, but nothing sets them and nothing enforces the retention period. Today auto-mod never stores message text (the safe default); building §7's opt-in means a `/setup` switch plus a scheduler job that prunes old snippets.
-- **The Muted role only covers channels that existed when it was created.** Channels made later don't get its permission overrides until someone fixes them by hand.
 - **Switching `DISCORD_GUILD_ID` on or off** leaves the commands registered the other way behind, so they can show up twice.
 - **No 32-bit ARM image** (older Raspberry Pi OS); 64-bit Pi OS works.
 - **Postgres** needs the Prisma provider changed in `schema.prisma`, not just `DATABASE_URL`.
 - **Watch Together's app ID** (`880218394199220334`) is Discord's and could change; `/jam` then explains how to start it by hand from the voice channel.
 - **yt-dlp vs YouTube:** YouTube changes often; `/music` relies on yt-dlp keeping up (the music image updates it at each start and is rebuilt weekly).
-- **The end-to-end check isn't in the repo.** Committing it (e.g. as `tests/e2e/`) would let CI run it on every PR.
+- **Server logs only know message text the bot saw arrive**, and only with Message Content on: messages from before the last restart are logged as deleted without their text, and edits to them aren't logged.
+- **Ticket transcripts** include message text only with Message Content on; without it they list who wrote when, plus attachments.
+- **`/voice rename`** is limited by Discord to 2 renames per room every 10 minutes.
+- **Dashboard scope:** it edits each feature's settings and switches, permission roles and reads cases. Lists managed by commands (tags, reaction roles, XP role rewards, map pools, auto-responders, stream alerts, channel overrides, scheduled announcements) are still managed in Discord. Dashboard changes are written to the bot's log, not the mod-log.
+- **Dashboard sessions are in memory**, so a restart signs everyone out (run `/dashboard` again).
+- **Native Discord AutoMod** isn't used yet. Moving the invite and word filters onto it would let them run without the Message Content intent; a good next step.
+
+Fixed on 2026-11-01: legacy `!` commands now have a `/setup` switch; message text in logs has an opt-in and enforced retention; the Muted role is applied to channels created later (and now blocks thread posting too); the end-to-end check is in the repo and in CI.
 
 ## 18. History
 
 - **2026-09-22** — Project guidelines written (this file, originally `CLAUDE.md`).
 - **PR #1 (2026-10-31)** — v1 release: core moderation, v1.x (anti-raid, mutes, appeals, channel overrides) and every Fun/Game module; a 16-issue code review fixed before release.
 - **PR #3 (2026-10-31)** — Beginner step-by-step Docker guide; self-registering commands and invite link; Prisma update check off; all-in-one `/setup` feature map with per-server module switches; `/map`, `/jam`, `/music`; ready-made images with opt-in auto-update; `/unmute` case fix.
-- **2026-11-01** — `CLAUDE.md` → `PROJECT.md`, rewritten as full project notes.
+- **PR #5 (2026-11-01)** — `CLAUDE.md` → `PROJECT.md`, rewritten as full project notes.
+- **2026-11-01** — All-in-one assistant: the three known gaps fixed; moderation essentials; server logs; tickets; suggestions; giveaways; join roles and Verify; auto-responders; announcements; join-to-create voice; `/help`; `/setup` menus per group; end-to-end check committed and run in CI.
+- **2026-11-01** — Optional web dashboard (`/dashboard`, `ENABLE_DASHBOARD`): feature map with switches, per-feature settings, permission roles, case history.

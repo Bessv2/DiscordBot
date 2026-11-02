@@ -6,6 +6,36 @@ import { buildAppealModal, submitAppeal, resolveAppeal } from '../lib/appealActi
 import { joinLfg, leaveLfg, closeLfg, buildLfgButtons, buildLfgEmbed } from '../lib/lfgActions';
 import { prisma } from '../lib/db';
 import { blockingModule } from '../lib/modules';
+import { TICKET_PANEL_BUTTON, closeTicket, openTicket } from '../features/tickets';
+import { toggleEntry } from '../features/giveaways';
+import { vote } from '../features/suggestions';
+import { VERIFY_BUTTON, verify } from '../features/joinRoles';
+
+// Buttons on messages the bot posted for a feature. Each handler checks its
+// own module switch, since buttons outlive the command that posted them.
+const BUTTONS: {
+  match: (id: string) => boolean;
+  run: (i: ButtonInteraction<'cached'>) => Promise<unknown>;
+}[] = [
+  { match: (id) => id === TICKET_PANEL_BUTTON, run: (i) => openTicket(i) },
+  {
+    match: (id) => id.startsWith('ticket_close:'),
+    run: async (i) =>
+      i.reply({
+        content: await closeTicket(i.member, i.channelId, Number(i.customId.split(':')[1])),
+        ephemeral: true,
+      }),
+  },
+  {
+    match: (id) => id.startsWith('giveaway_enter:'),
+    run: (i) => toggleEntry(i, Number(i.customId.split(':')[1])),
+  },
+  {
+    match: (id) => id.startsWith('suggestion_vote:'),
+    run: (i) => vote(i, Number(i.customId.split(':')[1]), i.customId.endsWith(':up')),
+  },
+  { match: (id) => id === VERIFY_BUTTON, run: (i) => verify(i) },
+];
 
 export async function interactionCreate(interaction: Interaction): Promise<void> {
   if (interaction.isButton() && interaction.customId.startsWith('appeal_')) {
@@ -20,6 +50,20 @@ export async function interactionCreate(interaction: Interaction): Promise<void>
       logger.error(`LFG button handler threw: ${(err as Error).message}`);
     });
     return;
+  }
+
+  if (interaction.isButton() && interaction.inCachedGuild()) {
+    const handler = BUTTONS.find((b) => b.match(interaction.customId));
+    if (handler) {
+      await handler.run(interaction).catch(async (err) => {
+        logger.error(`Button "${interaction.customId}" threw: ${(err as Error).stack ?? err}`);
+        if (!interaction.replied && !interaction.deferred)
+          await interaction
+            .reply({ content: 'Something went wrong.', ephemeral: true })
+            .catch(() => undefined);
+      });
+      return;
+    }
   }
 
   if (interaction.isModalSubmit() && interaction.customId.startsWith('appeal_submit:')) {
@@ -38,7 +82,11 @@ export async function interactionCreate(interaction: Interaction): Promise<void>
   if (!command) return;
 
   if (interaction.inCachedGuild()) {
-    const allowed = await memberHasPermission(interaction.member, command.scope, command.nativePermission);
+    const allowed = await memberHasPermission(
+      interaction.member,
+      command.scope,
+      command.nativePermission,
+    );
     if (!allowed) {
       await interaction.reply({
         content: "You don't have permission to use this command.",
@@ -53,7 +101,9 @@ export async function interactionCreate(interaction: Interaction): Promise<void>
       where: { id: interaction.guildId },
       select: { disabledModules: true },
     });
-    const blockedBy = guildConfig ? blockingModule(interaction.commandName, guildConfig.disabledModules) : null;
+    const blockedBy = guildConfig
+      ? blockingModule(interaction.commandName, guildConfig.disabledModules)
+      : null;
     if (blockedBy) {
       await interaction.reply({
         content: `**${blockedBy.name}** is turned off on this server. An admin can turn it on again with \`/setup\`.`,
@@ -87,18 +137,32 @@ async function handleAppealButton(interaction: ButtonInteraction): Promise<void>
 
   // appeal_accept / appeal_deny — only staff in the guild the appeal belongs to should act.
   if (!interaction.inCachedGuild()) {
-    await interaction.reply({ content: 'This can only be resolved from within the server.', ephemeral: true });
+    await interaction.reply({
+      content: 'This can only be resolved from within the server.',
+      ephemeral: true,
+    });
     return;
   }
-  const allowed = await memberHasPermission(interaction.member, 'moderation', PermissionFlagsBits.ModerateMembers);
+  const allowed = await memberHasPermission(
+    interaction.member,
+    'moderation',
+    PermissionFlagsBits.ModerateMembers,
+  );
   if (!allowed) {
-    await interaction.reply({ content: "You don't have permission to resolve appeals.", ephemeral: true });
+    await interaction.reply({
+      content: "You don't have permission to resolve appeals.",
+      ephemeral: true,
+    });
     return;
   }
 
   const decision = action === 'appeal_accept' ? 'accepted' : 'denied';
   const result = await resolveAppeal(interaction.client, id, decision, interaction.user);
-  await interaction.update({ content: `Resolved: ${result.reply}`, embeds: interaction.message.embeds, components: [] });
+  await interaction.update({
+    content: `Resolved: ${result.reply}`,
+    embeds: interaction.message.embeds,
+    components: [],
+  });
 }
 
 async function handleLfgButton(interaction: ButtonInteraction): Promise<void> {
@@ -117,21 +181,32 @@ async function handleLfgButton(interaction: ButtonInteraction): Promise<void> {
     }
     await closeLfg(postId);
     const updated = await prisma.lfgPost.findUniqueOrThrow({ where: { id: postId } });
-    await interaction.update({ embeds: [buildLfgEmbed(updated)], components: [buildLfgButtons(postId, true)] });
+    await interaction.update({
+      embeds: [buildLfgEmbed(updated)],
+      components: [buildLfgButtons(postId, true)],
+    });
     return;
   }
 
-  const result = action === 'lfg_join' ? await joinLfg(postId, interaction.user.id) : await leaveLfg(postId, interaction.user.id);
+  const result =
+    action === 'lfg_join'
+      ? await joinLfg(postId, interaction.user.id)
+      : await leaveLfg(postId, interaction.user.id);
   if (!result.ok) {
     await interaction.reply({ content: result.message, ephemeral: true });
     return;
   }
 
   const updated = await prisma.lfgPost.findUniqueOrThrow({ where: { id: postId } });
-  await interaction.update({ embeds: [buildLfgEmbed(updated)], components: [buildLfgButtons(postId, updated.status !== 'open')] });
+  await interaction.update({
+    embeds: [buildLfgEmbed(updated)],
+    components: [buildLfgButtons(postId, updated.status !== 'open')],
+  });
 }
 
-async function handleAppealModalSubmit(interaction: import('discord.js').ModalSubmitInteraction): Promise<void> {
+async function handleAppealModalSubmit(
+  interaction: import('discord.js').ModalSubmitInteraction,
+): Promise<void> {
   const [, idStr] = interaction.customId.split(':');
   const caseId = Number(idStr);
   const message = interaction.fields.getTextInputValue('appeal_message');

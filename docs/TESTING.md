@@ -46,7 +46,7 @@ Either way, you should see something like:
 Logged in as YourBot#1234 — serving 0 guild(s).
 The bot isn't in any server yet. Open this link in your browser to add it to one:
     https://discord.com/api/oauth2/authorize?client_id=...
-Registered 37 slash commands globally.
+Registered 52 slash commands globally.
 ```
 in the logs. The bot registers its own slash commands on startup, so there's no separate step for that. If you see an error instead, it should tell you specifically what's wrong and how to fix it (bad token, missing intent, unwritable data directory, etc.) rather than a raw stack trace — that's intentional, and if it isn't, that's a bug worth reporting.
 
@@ -67,6 +67,7 @@ Then try:
 - `/remind time:1m message:test` and wait a minute
 - `/poll question:"pizza or tacos?" options:"pizza, tacos"`
 - `/config view` to see current settings, and `/config modlog`, `/config automod`, `/config permissions` to change them without re-running `/setup`
+- If `ENABLE_DASHBOARD=true` (and `DASHBOARD_PORT=3000` with Docker): run `/dashboard`, open the link on the computer running the bot, switch a feature off there, and check its command now says it's off in Discord. Run `/dashboard` as a member without Manage Server and check it refuses.
 - If `ENABLE_MESSAGE_CONTENT=true`: post a `discord.gg/...` link or spam a bunch of messages quickly and see auto-mod catch it
 
 ## What to report back

@@ -1,6 +1,7 @@
 import { Guild, EmbedBuilder, SendableChannels, User } from 'discord.js';
 import { prisma } from './db';
 import { logger } from './logger';
+import { recordContentLog } from './contentRetention';
 
 const ACTION_COLOR: Record<string, number> = {
   warn: 0xf5a623,
@@ -9,11 +10,13 @@ const ACTION_COLOR: Record<string, number> = {
   timeout: 0x9b59b6,
   mute: 0x9b59b6,
   unmute: 0x2ecc71,
+  unban: 0x2ecc71,
+  note: 0x607d8b,
   automod: 0x3498db,
 };
 
 export interface ModLogEntry {
-  type: 'warn' | 'kick' | 'ban' | 'timeout' | 'mute' | 'unmute';
+  type: 'warn' | 'kick' | 'ban' | 'timeout' | 'mute' | 'unmute' | 'unban';
   /** Omitted for actions (like unmute) that resolve an existing case rather than opening a new one. */
   caseNumber?: number;
   target: User;
@@ -62,7 +65,11 @@ export async function postModLog(guild: Guild, entry: ModLogEntry): Promise<void
 
   const embed = new EmbedBuilder()
     .setColor(ACTION_COLOR[entry.type] ?? 0x95a5a6)
-    .setTitle(entry.caseNumber ? `Case #${entry.caseNumber} · ${entry.type.toUpperCase()}` : entry.type.toUpperCase())
+    .setTitle(
+      entry.caseNumber
+        ? `Case #${entry.caseNumber} · ${entry.type.toUpperCase()}`
+        : entry.type.toUpperCase(),
+    )
     .addFields(
       { name: 'Member', value: `${entry.target} (${entry.target.tag})`, inline: true },
       { name: 'Moderator', value: `${entry.moderator} (${entry.moderator.tag})`, inline: true },
@@ -78,6 +85,36 @@ export async function postModLog(guild: Guild, entry: ModLogEntry): Promise<void
     logger.warn(
       `[modlog] Failed to send mod-log embed in guild ${guild.id}: ${(err as Error).message}`,
       'Check that the bot has View Channel + Send Messages + Embed Links permissions in the mod-log channel.',
+    );
+  });
+}
+
+/**
+ * For moderator actions on channels rather than members (purge, lock,
+ * slowmode, role changes): still logged with who did it and why (section 7),
+ * just without a case number.
+ */
+export async function postModLogNote(
+  guild: Guild,
+  note: {
+    title: string;
+    moderator: User;
+    fields: { name: string; value: string; inline?: boolean }[];
+  },
+): Promise<void> {
+  const channel = await resolveModLogChannel(guild);
+  if (!channel) return;
+  const embed = new EmbedBuilder()
+    .setColor(ACTION_COLOR.note!)
+    .setTitle(note.title)
+    .addFields(
+      { name: 'Moderator', value: `${note.moderator} (${note.moderator.tag})`, inline: true },
+      ...note.fields.map((f) => ({ ...f, value: f.value.slice(0, 1024) || '—' })),
+    )
+    .setTimestamp();
+  await channel.send({ embeds: [embed], allowedMentions: { parse: [] } }).catch((err) => {
+    logger.warn(
+      `[modlog] Failed to send mod-log note in guild ${guild.id}: ${(err as Error).message}`,
     );
   });
 }
@@ -101,12 +138,21 @@ export async function postAutomodLog(guild: Guild, entry: AutomodLogEntry): Prom
     embed.addFields({ name: 'Matched content', value: entry.contentSnippet.slice(0, 1000) });
   }
 
-  await channel.send({ embeds: [embed] }).catch((err) => {
+  const sent = await channel.send({ embeds: [embed] }).catch((err) => {
     logger.warn(
       `[modlog] Failed to send auto-mod embed in guild ${guild.id}: ${(err as Error).message}`,
       'Check that the bot has View Channel + Send Messages + Embed Links permissions in the mod-log channel.',
     );
+    return null;
   });
+  // The snippet is member message text, so it expires (section 7).
+  if (sent && entry.contentSnippet) {
+    const config = await prisma.guildConfig.findUnique({
+      where: { id: guild.id },
+      select: { contentRetainDays: true },
+    });
+    await recordContentLog(sent, config?.contentRetainDays ?? 30);
+  }
 }
 
 function formatDuration(ms: number): string {

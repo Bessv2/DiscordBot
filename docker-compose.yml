@@ -13,6 +13,13 @@ services:
     volumes:
       # The SQLite database lives here so it survives updates and rebuilds.
       - ./data:/app/data
+    ports:
+      # The optional web dashboard (ENABLE_DASHBOARD=true). Reachable only
+      # from this computer (127.0.0.1); see README → "Web dashboard" for
+      # using it from elsewhere. With DASHBOARD_PORT unset, Docker picks a
+      # random free port, so this line never clashes with anything else
+      # running on the machine (set DASHBOARD_PORT=3000 to use the dashboard).
+      - "127.0.0.1:${DASHBOARD_PORT:-}:${DASHBOARD_PORT:-3000}"
     labels:
       # Lets the optional auto-updater below update this container (and only this one).
       - com.centurylinklabs.watchtower.enable=true

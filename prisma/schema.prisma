@@ -96,6 +96,27 @@ model GuildConfig {
   // tracks someone else queued. Unset = anyone in the voice channel can.
   musicDjRoleId String?
 
+  // Server logs: a channel for everything that happens on the server
+  // (messages edited/deleted, joins/leaves, voice, channel and role changes,
+  // bans). serverLogEvents is an opt-out list of event keys, like disabledModules.
+  serverLogChannelId String?
+  serverLogEvents    String  @default("[]") // JSON string array of event keys turned OFF
+
+  // Tickets: members open a private thread with staff from a panel button.
+  ticketStaffRoleId  String?
+  ticketLogChannelId String? // where transcripts go when a ticket closes
+
+  // Suggestions channel (/suggest).
+  suggestionChannelId String?
+
+  // Roles given to everyone who joins (needs ENABLE_GUILD_MEMBERS), and the
+  // role the Verify button hands out.
+  joinRoleIds  String  @default("[]") // JSON string array
+  verifyRoleId String?
+
+  // Join-to-create voice: joining this channel makes you your own room.
+  tempVoiceHubId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -120,6 +141,13 @@ model GuildConfig {
   tournaments            Tournament[]
   voiceActivityRoles     VoiceActivityRole[]
   mapPools               MapPool[]
+  contentLogMessages     ContentLogMessage[]
+  tickets                Ticket[]
+  giveaways              Giveaway[]
+  suggestions            Suggestion[]
+  autoResponders         AutoResponder[]
+  tempVoiceChannels      TempVoiceChannel[]
+  scheduledMessages      ScheduledMessage[]
 
   @@map("guild_configs")
 }
@@ -457,4 +485,142 @@ model MapPool {
 
   @@unique([guildId, game, name])
   @@map("map_pools")
+}
+
+// Log messages (mod-log or server log) that contain member message text.
+// The retention job edits the text out of each one when expiresAt passes,
+// so "keep message text for N days" is actually enforced.
+model ContentLogMessage {
+  id        Int      @id @default(autoincrement())
+  guildId   String
+  channelId String
+  messageId String
+  expiresAt DateTime
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("content_log_messages")
+}
+
+model Ticket {
+  id         Int       @id @default(autoincrement())
+  guildId    String
+  threadId   String    @unique // the private thread the ticket lives in
+  userId     String // who opened it
+  topic      String?
+  status     String    @default("open") // open | closed
+  createdAt  DateTime  @default(now())
+  closedAt   DateTime?
+  closedById String?
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId, userId, status])
+  @@map("tickets")
+}
+
+model Giveaway {
+  id          Int      @id @default(autoincrement())
+  guildId     String
+  channelId   String
+  messageId   String?
+  prize       String
+  winnerCount Int
+  hostId      String
+  endsAt      DateTime
+  ended       Boolean  @default(false)
+  winnerIds   String   @default("[]") // JSON string array, filled when drawn
+  createdAt   DateTime @default(now())
+
+  guild   GuildConfig     @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  entries GiveawayEntry[]
+
+  @@index([ended, endsAt])
+  @@map("giveaways")
+}
+
+model GiveawayEntry {
+  giveawayId Int
+  userId     String
+
+  giveaway Giveaway @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
+
+  @@id([giveawayId, userId])
+  @@map("giveaway_entries")
+}
+
+model Suggestion {
+  id          Int      @id @default(autoincrement())
+  guildId     String
+  channelId   String
+  messageId   String?
+  authorId    String
+  content     String
+  status      String   @default("pending") // pending | approved | denied
+  staffNote   String?
+  decidedById String?
+  createdAt   DateTime @default(now())
+
+  guild GuildConfig      @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  votes SuggestionVote[]
+
+  @@map("suggestions")
+}
+
+model SuggestionVote {
+  suggestionId Int
+  userId       String
+  up           Boolean
+
+  suggestion Suggestion @relation(fields: [suggestionId], references: [id], onDelete: Cascade)
+
+  @@id([suggestionId, userId])
+  @@map("suggestion_votes")
+}
+
+model AutoResponder {
+  id        Int      @id @default(autoincrement())
+  guildId   String
+  trigger   String // stored lowercased
+  matchType String   @default("contains") // contains | exact | starts
+  response  String
+  createdBy String
+  createdAt DateTime @default(now())
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@unique([guildId, trigger])
+  @@map("auto_responders")
+}
+
+// Rooms made by join-to-create voice; deleted when they empty out.
+model TempVoiceChannel {
+  channelId String   @id
+  guildId   String
+  ownerId   String
+  createdAt DateTime @default(now())
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@map("temp_voice_channels")
+}
+
+// /announce: one-off (later) or repeating posts.
+model ScheduledMessage {
+  id        Int      @id @default(autoincrement())
+  guildId   String
+  channelId String
+  title     String?
+  content   String
+  color     Int?
+  nextRunAt DateTime
+  repeat    String   @default("none") // none | daily | weekly
+  createdBy String
+  createdAt DateTime @default(now())
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([nextRunAt])
+  @@map("scheduled_messages")
 }

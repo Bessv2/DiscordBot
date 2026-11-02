@@ -3,7 +3,7 @@ import { prisma, getOrCreateGuildConfig } from './db';
 
 export interface CreateCaseInput {
   guildId: string;
-  type: 'warn' | 'kick' | 'ban' | 'timeout' | 'mute' | 'unmute';
+  type: 'warn' | 'kick' | 'ban' | 'timeout' | 'mute' | 'unmute' | 'unban';
   targetId: string;
   targetTag: string;
   moderatorId: string;
@@ -45,7 +45,11 @@ export async function createCase(input: CreateCaseInput): Promise<Case> {
   });
 }
 
-export async function getCasesForUser(guildId: string, userId: string, limit = 10): Promise<Case[]> {
+export async function getCasesForUser(
+  guildId: string,
+  userId: string,
+  limit = 10,
+): Promise<Case[]> {
   return prisma.case.findMany({
     where: { guildId, targetId: userId },
     orderBy: { caseNumber: 'desc' },

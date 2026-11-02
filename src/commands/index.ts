@@ -36,6 +36,19 @@ import { tournamentCommand } from './fun/tournament';
 import { mapCommand } from './fun/map';
 import { jamCommand } from './fun/jam';
 import { musicCommand } from './fun/music';
+import { purgeCommand } from './moderation/purge';
+import { slowmodeCommand } from './moderation/slowmode';
+import { lockCommand, unlockCommand } from './moderation/lock';
+import { unbanCommand } from './moderation/unban';
+import { roleCommand } from './moderation/role';
+import { helpCommand } from './utility/help';
+import { dashboardCommand } from './setup/dashboard';
+import { ticketCommand } from './community/ticket';
+import { giveawayCommand } from './community/giveaway';
+import { suggestCommand, suggestionCommand } from './community/suggest';
+import { autoresponderCommand } from './community/autoresponder';
+import { announceCommand } from './community/announce';
+import { voiceCommand } from './community/voice';
 
 // One command = one file/module (section 8) — this is the only place they
 // get wired together, for live command dispatch and for registering the
@@ -78,4 +91,19 @@ export const commands: Command[] = [
   mapCommand,
   jamCommand,
   musicCommand,
+  purgeCommand,
+  slowmodeCommand,
+  lockCommand,
+  unlockCommand,
+  unbanCommand,
+  roleCommand,
+  helpCommand,
+  dashboardCommand,
+  ticketCommand,
+  giveawayCommand,
+  suggestCommand,
+  suggestionCommand,
+  autoresponderCommand,
+  announceCommand,
+  voiceCommand,
 ];

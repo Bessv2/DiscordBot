@@ -31,12 +31,26 @@ export type ModuleId =
   | 'gameservers'
   | 'streams'
   | 'activityroles'
-  | 'music';
+  | 'music'
+  | 'prefix'
+  | 'serverlog'
+  | 'tickets'
+  | 'giveaways'
+  | 'suggestions'
+  | 'joinroles'
+  | 'autoresponders'
+  | 'announcements'
+  | 'tempvoice';
 
 export type ModuleGroup = 'Moderation' | 'Community' | 'Games & fun';
 
 export type FlagField =
-  'automodEnabled' | 'antiRaidEnabled' | 'welcomeEnabled' | 'xpEnabled' | 'economyEnabled';
+  | 'automodEnabled'
+  | 'antiRaidEnabled'
+  | 'welcomeEnabled'
+  | 'xpEnabled'
+  | 'economyEnabled'
+  | 'prefixCommandsOn';
 
 export interface ModuleDef {
   id: ModuleId;
@@ -71,6 +85,26 @@ export const MODULES: ModuleDef[] = [
     blurb: 'Spot a sudden wave of joins and optionally lock the server down.',
     commands: [],
     toggle: { kind: 'flag', field: 'antiRaidEnabled' },
+    defaultOn: false,
+  },
+  {
+    id: 'serverlog',
+    name: 'Server logs',
+    emoji: '📜',
+    group: 'Moderation',
+    blurb: 'A channel recording edits, deletions, joins, leaves, voice, role and channel changes.',
+    commands: [],
+    toggle: { kind: 'list' },
+    defaultOn: true,
+  },
+  {
+    id: 'prefix',
+    name: 'Legacy ! commands',
+    emoji: '❗',
+    group: 'Moderation',
+    blurb: 'Old-style !warn, !kick, !ban and !cases for mods who prefer typing them.',
+    commands: [],
+    toggle: { kind: 'flag', field: 'prefixCommandsOn' },
     defaultOn: false,
   },
   {
@@ -170,6 +204,77 @@ export const MODULES: ModuleDef[] = [
     group: 'Community',
     blurb: 'Members can ask the bot to remind them about something later.',
     commands: ['remind'],
+    toggle: { kind: 'list' },
+    defaultOn: true,
+  },
+  {
+    id: 'tickets',
+    name: 'Support tickets',
+    emoji: '🎫',
+    group: 'Community',
+    blurb:
+      'Members open a private thread with your staff from a button; closed tickets are saved as transcripts.',
+    commands: ['ticket'],
+    toggle: { kind: 'list' },
+    defaultOn: true,
+  },
+  {
+    id: 'suggestions',
+    name: 'Suggestions',
+    emoji: '💡',
+    group: 'Community',
+    blurb: 'Members post ideas, everyone votes, and staff approve or deny them.',
+    commands: ['suggest', 'suggestion'],
+    toggle: { kind: 'list' },
+    defaultOn: true,
+  },
+  {
+    id: 'giveaways',
+    name: 'Giveaways',
+    emoji: '🎉',
+    group: 'Community',
+    blurb: 'Enter-with-a-button giveaways that draw winners by themselves when time is up.',
+    commands: ['giveaway'],
+    toggle: { kind: 'list' },
+    defaultOn: true,
+  },
+  {
+    id: 'joinroles',
+    name: 'Join roles & verification',
+    emoji: '✅',
+    group: 'Community',
+    blurb: 'Give everyone a role when they join, or only once they press a Verify button.',
+    commands: [],
+    toggle: { kind: 'list' },
+    defaultOn: true,
+  },
+  {
+    id: 'autoresponders',
+    name: 'Auto-responders',
+    emoji: '🤖',
+    group: 'Community',
+    blurb: 'The bot answers by itself when someone says a trigger phrase, like "how do I join".',
+    commands: ['autoresponder'],
+    toggle: { kind: 'list' },
+    defaultOn: true,
+  },
+  {
+    id: 'announcements',
+    name: 'Announcements',
+    emoji: '📣',
+    group: 'Community',
+    blurb: 'Post a styled announcement now, later, or every day or week.',
+    commands: ['announce'],
+    toggle: { kind: 'list' },
+    defaultOn: true,
+  },
+  {
+    id: 'tempvoice',
+    name: 'Join-to-create voice',
+    emoji: '🔊',
+    group: 'Community',
+    blurb: 'Joining one voice channel gives you your own room, deleted when everyone leaves.',
+    commands: ['voice'],
     toggle: { kind: 'list' },
     defaultOn: true,
   },

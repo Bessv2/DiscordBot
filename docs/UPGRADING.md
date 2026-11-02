@@ -39,7 +39,11 @@ Older versions of `docker-compose.yml` had `build: .`. Download the current `doc
 
 ## New bot permissions
 
-When a release adds a feature that needs a new Discord permission, servers that invited the bot earlier don't get it automatically. Open the invite link from the bot's startup log again and authorize it: Discord adds the missing permissions to the bot's role, and nothing else changes. The latest example is **Create Invite** (`/jam`), **Create Polls** (`/map vote`), and **Connect** and **Speak** (`/music`).
+When a release adds a feature that needs a new Discord permission, servers that invited the bot earlier don't get it automatically. Open the invite link from the bot's startup log again and authorize it: Discord adds the missing permissions to the bot's role, and nothing else changes. Recent examples: **Create Invite** (`/jam`), **Create Polls** (`/map vote`), **Connect** and **Speak** (`/music`), and in the latest release **Create Private Threads**, **Send Messages in Threads**, **Manage Threads** and **Attach Files** (tickets) and **Move Members** (join-to-create voice).
+
+## Optional web dashboard
+
+Nothing changes unless you want it. To use the new web dashboard, add the `ENABLE_DASHBOARD` and `DASHBOARD_PORT` lines from `.env.example` to your `.env`, download the current `docker-compose.yml` (it publishes the dashboard's port on 127.0.0.1 only), and run `docker compose up -d`. Admins sign in with `/dashboard`. See README → "Web dashboard". No database change is involved.
 
 ## Node version (bare Node)
 

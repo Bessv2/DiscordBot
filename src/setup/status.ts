@@ -1,8 +1,10 @@
 // Pure "what's the state of every feature?" logic behind the /setup
 // feature map. No Discord or DB access, so it's unit tested directly.
 import { MODULES, ModuleDef, ModuleGroup, ModuleId, isModuleOn } from '../lib/modules';
+import { parseStringList } from '../lib/jsonList';
 
-export type FeatureState = 'on' | 'off' | 'needs';
+// idle = on, but not set up yet (e.g. no channel picked), so it isn't doing anything.
+export type FeatureState = 'on' | 'idle' | 'off' | 'needs';
 
 export interface FeatureStatus {
   /** A module ID, or one of the essentials that aren't modules. */
@@ -30,6 +32,13 @@ export interface StatusConfig {
   economyEnabled: boolean;
   starboardChannelId: string | null;
   birthdayChannelId: string | null;
+  prefixCommandsOn: boolean;
+  serverLogChannelId: string | null;
+  ticketStaffRoleId: string | null;
+  suggestionChannelId: string | null;
+  joinRoleIds: string;
+  verifyRoleId: string | null;
+  tempVoiceHubId: string | null;
 }
 
 /** Host-level facts: what the bot's .env allows. */
@@ -40,6 +49,7 @@ export interface HostFacts {
   music: boolean;
   twitchOrYoutube: boolean;
   steamOrRiot: boolean;
+  prefixCommands: boolean;
   modRoleCount: number;
   adminRoleCount: number;
 }
@@ -90,6 +100,7 @@ function moduleStatus(m: ModuleDef, gc: StatusConfig, host: HostFacts): FeatureS
 
   const needs = (detail: string): FeatureStatus => ({ ...base, state: 'needs', detail });
   const fine = (detail: string): FeatureStatus => ({ ...base, state: 'on', detail });
+  const idle = (detail: string): FeatureStatus => ({ ...base, state: 'idle', detail });
 
   switch (m.id) {
     case 'automod':
@@ -118,7 +129,7 @@ function moduleStatus(m: ModuleDef, gc: StatusConfig, host: HostFacts): FeatureS
     case 'starboard':
       return gc.starboardChannelId
         ? fine(ch(gc.starboardChannelId)!)
-        : needs('pick a starboard channel');
+        : idle('pick a starboard channel to start');
     case 'birthdays':
       return gc.birthdayChannelId
         ? fine(`announced in ${ch(gc.birthdayChannelId)}`)
@@ -143,12 +154,54 @@ function moduleStatus(m: ModuleDef, gc: StatusConfig, host: HostFacts): FeatureS
       return host.presence
         ? fine('set games with `/activityrole add`')
         : needs('the host needs to turn on Presence for this to see games');
+    case 'prefix':
+      return host.prefixCommands && host.messageContent
+        ? fine('!warn, !kick, !ban, !cases')
+        : needs('the host needs to turn on ENABLE_PREFIX_COMMANDS and Message Content');
+    case 'serverlog':
+      return gc.serverLogChannelId
+        ? fine(ch(gc.serverLogChannelId)!)
+        : idle('pick a log channel to start');
+    case 'tickets':
+      return gc.ticketStaffRoleId
+        ? fine(`staff: <@&${gc.ticketStaffRoleId}>`)
+        : idle('pick a staff role, then post the ticket button');
+    case 'suggestions':
+      return gc.suggestionChannelId
+        ? fine(`posted in ${ch(gc.suggestionChannelId)}`)
+        : idle('pick a suggestions channel to start');
+    case 'joinroles': {
+      const joinRoles = parseStringList(gc.joinRoleIds).length;
+      if (!joinRoles && !gc.verifyRoleId) return idle('pick join roles or a verified role');
+      if (joinRoles && !host.guildMembers)
+        return needs(
+          'join roles need the host to turn on Server Members (the Verify button works without it)',
+        );
+      return fine(
+        [joinRoles && `${joinRoles} join role(s)`, gc.verifyRoleId && 'Verify button']
+          .filter(Boolean)
+          .join(', '),
+      );
+    }
+    case 'autoresponders':
+      return host.messageContent
+        ? fine('add them with `/autoresponder add`')
+        : needs('the host needs to turn on Message Content');
+    case 'tempvoice':
+      return gc.tempVoiceHubId
+        ? fine(`join ${ch(gc.tempVoiceHubId)} to get a room`)
+        : idle('pick the join-to-create voice channel');
     default:
       return fine('on');
   }
 }
 
-export const STATE_ICON: Record<FeatureState, string> = { on: '✅', off: '⬜', needs: '⚠️' };
+export const STATE_ICON: Record<FeatureState, string> = {
+  on: '✅',
+  idle: '◽',
+  off: '⬜',
+  needs: '⚠️',
+};
 
 /** Lines for the feature map, grouped. Kept under Discord's 1024-char field limit per group. */
 export function featureMapFields(statuses: FeatureStatus[]): { name: string; value: string }[] {
@@ -158,16 +211,23 @@ export function featureMapFields(statuses: FeatureStatus[]): { name: string; val
     Community: '🏘️',
     'Games & fun': '🎮',
   };
-  return groups.map((g) => {
+  // A group longer than one field (1024 characters) continues in the next
+  // field instead of being cut off.
+  return groups.flatMap((g) => {
     const lines = statuses
       .filter((s) => s.group === g)
-      .map((s) => `${STATE_ICON[s.state]} ${s.emoji} **${s.name}** — ${s.detail}`);
+      .map((s) => `${STATE_ICON[s.state]} ${s.emoji} **${s.name}** — ${s.detail}`.slice(0, 1024));
+    const fields: { name: string; value: string }[] = [];
     let value = '';
     for (const line of lines) {
-      const next = value ? `${value}\n${line}` : line;
-      value = next.length > 1024 ? value : next;
+      if (value && value.length + 1 + line.length > 1024) {
+        fields.push({ name: fields.length ? '\u200b' : `${groupEmoji[g]} ${g}`, value });
+        value = '';
+      }
+      value = value ? `${value}\n${line}` : line;
     }
-    return { name: `${groupEmoji[g]} ${g}`, value };
+    if (value) fields.push({ name: fields.length ? '\u200b' : `${groupEmoji[g]} ${g}`, value });
+    return fields;
   });
 }
 

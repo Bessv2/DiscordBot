@@ -4,6 +4,8 @@ A self-hostable Discord moderation and utility bot. No third-party dashboard, no
 
 **Never set up a bot before?** Follow [Setup, step by step](#setup-step-by-step) below. It assumes no technical background. You only copy and paste, there's no coding, and it takes about 20 minutes. Already comfortable with Docker? Skip to the [short version](#short-version-for-docker-users).
 
+**Already running it?** To update, run `docker compose pull` and then `docker compose up -d` in the bot folder. See [Updating to a new version](#updating-to-a-new-version).
+
 ## Setup, step by step
 
 **What you need:**
@@ -110,7 +112,7 @@ The bot writes your personal invite link in its log the first time it starts.
    The bot isn't in any server yet. Open this link in your browser to add it to one:
        https://discord.com/api/oauth2/authorize?client_id=...
    ```
-   You should also see `Logged in as YourBot#1234` and `Registered 37 slash commands globally`.
+   You should also see `Logged in as YourBot#1234` and `Registered 52 slash commands globally`.
 3. Copy that link into your browser. Pick your server, click **Continue**, and then click **Authorize**. Leave the permissions ticked: they're the ones the bot needs.
 
 **One more click that's easy to miss:** in Discord, open **Server Settings → Roles** and drag the bot's role (it has the bot's name) **above** the roles of the members it should be able to moderate. Discord only lets a bot kick, ban, time out or give roles to members whose highest role is *below* its own.
@@ -121,12 +123,14 @@ The bot writes your personal invite link in its log the first time it starts.
 
 In any channel on your server, type `/setup` and pick it from the menu that pops up. Only you can see what it shows.
 
-It opens on a **feature map**: every feature the bot has, with ✅ on, ⬜ off, or ⚠️ on but needing something (like a channel to post in). From there:
+It opens on a **feature map**: every feature the bot has, with ✅ working, ◽ not set up yet (for example, no channel picked), ⬜ off, or ⚠️ needs something. From there:
 - **🚀 Quick start** walks you through the three essentials: the mod-log channel, auto-moderation, and who can moderate.
 - **Pick any feature** from the menu to turn it on or off and choose its channels and roles: welcome messages, levels and role rewards, starboard, birthdays, music and watch parties, game-night maps, and the rest.
 - **Skip** is on every screen. Nothing is required, and every feature works with sensible defaults. **Skip for now** closes the wizard, and you can come back with `/setup` any time.
 
 Changes save the moment you make them.
+
+Prefer a web page? There's an optional [web dashboard](#web-dashboard) with the same settings, which whoever runs the bot can turn on.
 
 `/setup` not showing up yet? The first time, Discord can take a few minutes to show a new bot's commands. Wait a few minutes, then restart Discord or press Ctrl+R (Cmd+R on Mac).
 
@@ -145,20 +149,43 @@ Your data (settings, case history, levels, and so on) lives in the `data` folder
 
 ## Updating to a new version
 
-New versions are published as ready-made images, so updating never means downloading the bot again or rebuilding it. Your settings and data stay where they are.
-
-**Automatic (recommended):** in `.env`, set `COMPOSE_PROFILES=autoupdate`, then run `docker compose up -d` once. From then on, the bot checks for a new version once a day at 04:00 and installs it by itself, with a quick restart. It's off unless you turn it on, because it means your computer checks GitHub daily. To turn it off again, empty that line and run `docker compose up -d`.
-
-**By hand, whenever you like:** open a terminal in the bot folder and run:
+**The short answer:** open a terminal in the bot folder and run these two lines:
 
 ```
 docker compose pull
 docker compose up -d
 ```
 
-The first line downloads the new version, and the second restarts the bot on it.
+The first line downloads the newest version of the bot, and the second restarts the bot on it. Your settings, case history and everything else in the `data` folder stay exactly as they are. Database changes and new slash commands are applied by themselves when the bot starts.
 
-Either way, database changes are applied automatically and slash commands update by themselves. See [`docs/UPGRADING.md`](./docs/UPGRADING.md) for details. Occasionally a release also needs a new file from this repo, such as a new `docker-compose.yml`. When that happens, the release notes say so.
+### Step by step
+
+1. **Open a terminal in the bot folder**, the same way as in [step 4](#step-4--give-the-bot-its-token). It has to be the folder that contains `docker-compose.yml`.
+2. **Back up first (recommended, takes seconds).** Copy the `data` folder somewhere safe, for example to your desktop. On Mac or Linux you can run `./scripts/backup-db.sh` instead, which saves a dated copy in `backups/`. If an update ever goes wrong, putting that folder back undoes it (see [`docs/BACKUP.md`](./docs/BACKUP.md)).
+3. **Download and restart:**
+   ```
+   docker compose pull
+   docker compose up -d
+   ```
+   If there's nothing new, `pull` says the image is up to date and `up -d` leaves the bot running as it was.
+4. **Check it came back:** run `docker compose logs --tail 30 bot` (or open the bot's **Logs** tab in Docker Desktop) and look for `Logged in as`.
+
+This works the same for the music image (`BOT_IMAGE_TAG=music`): `pull` downloads whichever one your `.env` picks.
+
+### Or let it update itself
+
+In `.env`, set `COMPOSE_PROFILES=autoupdate`, then run `docker compose up -d` once. From then on, the bot checks for a new version once a day at 04:00 and installs it by itself, with a quick restart. It's off unless you turn it on, because it means your computer checks GitHub daily. To turn it off again, empty that line and run `docker compose up -d`.
+
+### When a release changes the bot's files
+
+Most updates are just the image above. Occasionally a release also changes `docker-compose.yml` or adds new settings to `.env.example`, and the release notes say so. Then, before running the two lines:
+
+- **Downloaded as a ZIP:** download the ZIP again and copy only the new `docker-compose.yml` into your bot folder, replacing the old one. **Keep your own `.env` and `data` folder.** Copy any new lines you want from the new `.env.example` into your `.env`.
+- **Used git:** run `git pull` first. Your `.env` and `data` folder aren't tracked by git, so they're never touched.
+
+**Built it from source instead of using the ready-made image?** Update with `git pull`, then `docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build`.
+
+More detail, including running without Docker, is in [`docs/UPGRADING.md`](./docs/UPGRADING.md).
 
 ## Troubleshooting
 
@@ -167,7 +194,7 @@ Either way, database changes are applied automatically and slash commands update
 | `docker` is not recognized / `command not found` | Docker Desktop isn't installed, or the terminal was opened before you installed it. Close the terminal, make sure Docker Desktop is open, and open a new terminal. |
 | `Cannot connect to the Docker daemon`, or `error during connect` | Docker Desktop isn't running. Open it and wait for **Engine running**, then try again. |
 | `env file ... .env not found` | You haven't made `.env` yet, or it isn't in the bot folder. Redo step 4. On Windows, make sure Notepad didn't save it as `.env.txt`. |
-| `manifest unknown`, `denied`, or `pull access denied` for `ghcr.io/bessv2/discordbot` | The ready-made image isn't published yet (or your `BOT_IMAGE_TAG` is misspelled). Build it yourself instead: `docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build`. |
+| `not found`, `manifest unknown`, `denied`, or `pull access denied` for `ghcr.io/bessv2/discordbot` (when starting or updating) | The ready-made image isn't published or public yet (or your `BOT_IMAGE_TAG` is misspelled). Build it yourself instead: `docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build`. |
 | `no configuration file provided: not found` | The terminal isn't in the bot folder. Open the terminal from the folder that contains `docker-compose.yml` (step 4). |
 | Log says `DISCORD_TOKEN: DISCORD_TOKEN is required` | The token line in `.env` is empty or wasn't saved. Paste the token again and save. Then run `docker compose up -d` to restart. |
 | Log says `Discord rejected the bot token` | The token is wrong or was reset. Copy a fresh one from the **Bot** tab (**Reset Token**), not the "Client Secret" on the OAuth2 tab. Put it in `.env`, then run `docker compose up -d`. |
@@ -190,6 +217,7 @@ Still stuck? Open an issue with what you did and the last ~20 lines of the log. 
 4. `docker compose up -d` (pulls `ghcr.io/bessv2/discordbot:latest`; add `-f docker-compose.build.yml --build` to build from source instead)
 5. `docker compose logs bot`, then open the invite link it prints. It requests `bot` + `applications.commands` with only the permissions the bot uses.
 6. Move the bot's role above the roles it should moderate, then run `/setup` in your server.
+7. To update later: `docker compose pull && docker compose up -d` (or set `COMPOSE_PROFILES=autoupdate` to do it daily). `git pull` first when a release changes `docker-compose.yml`.
 
 Slash commands are registered automatically on startup whenever their definitions change (global by default; set `DISCORD_GUILD_ID` to register in one guild instantly). Migrations run automatically from the container entrypoint. Images are multi-arch (amd64, arm64) and rebuilt by GitHub Actions on every push to `main` and weekly; `COMPOSE_PROFILES=autoupdate` adds a pinned, label-scoped [Watchtower](https://github.com/nicholas-fedor/watchtower) that only updates this container.
 
@@ -225,6 +253,30 @@ There are two ways to listen together, and you can use both:
 
 Server admins can pick a **DJ role** in `/setup` → Music. Then only DJs, moderators, or whoever queued a song can skip or remove it. The bot only accepts YouTube links (anything else is treated as a search), skips live streams and videos over 3 hours, and leaves voice when the queue has been empty for 5 minutes or everyone else has left.
 
+## Web dashboard
+
+An optional web page with the same settings as `/setup`: every feature's on/off switch, its channels, roles and limits, who can moderate, and a searchable case history. It's **off by default**, and everything it does can also be done in Discord.
+
+**How sign-in works.** There are no passwords and nothing to register. A server admin types `/dashboard` in Discord and gets a private link that only they can see. It works once, within 10 minutes, and signs them in for that one server for up to 12 hours. Every page and every save checks again that they're still an admin there, so taking away someone's admin role locks them out straight away. Restarting the bot signs everyone out.
+
+**Turning it on (Docker).** In `.env`, set:
+
+```
+ENABLE_DASHBOARD=true
+DASHBOARD_PORT=3000
+```
+
+Then run `docker compose up -d`, type `/dashboard` in Discord, and open the link **on the computer running the bot**. If port 3000 is already taken, pick another number for `DASHBOARD_PORT`. Without Docker, `ENABLE_DASHBOARD=true` is enough.
+
+**Using it from another computer.** The dashboard only answers on the bot's own computer (127.0.0.1), so it's never on the internet by accident. To use it from elsewhere, pick one:
+- **SSH tunnel** (nothing to install): on your own computer, run `ssh -L 3000:localhost:3000 you@your-server`, then open the `/dashboard` link while it's connected.
+- **Tailscale or a VPN** to the server, then set `DASHBOARD_URL` to the address you open it at.
+- **A reverse proxy with HTTPS** (Caddy, nginx, Cloudflare Tunnel) that forwards to `127.0.0.1:3000`. Set `DASHBOARD_URL=https://your.address` so the links point there; the sign-in cookie is then also marked Secure.
+
+Don't publish it on plain `http://` over the internet: the sign-in link and cookie would travel unencrypted.
+
+**What it costs.** It runs inside the bot (no extra container) and adds a few MB of memory while it's on. With it off, its code isn't even loaded.
+
 ## Resource baseline
 
 Idle footprint on a single small guild is roughly **60-100MB RAM** and negligible CPU — comfortable on a $5/month VPS or a Raspberry Pi. No Redis, no message queue, and no separate database server required at this scale (SQLite is the default). The optional integrations (`/streamwatch`, birthdays) poll on a 5-minute timer rather than holding connections open, so turning them on doesn't change this baseline meaningfully — the cost scales with how many channels/streamers you watch, not with being enabled at all.
@@ -237,14 +289,28 @@ Idle footprint on a single small guild is roughly **60-100MB RAM** and negligibl
 - Anti-raid join-rate detection with optional auto-lockdown (`/lockdown`)
 - Appeal flow: a DM button on every mod action opens a modal, routes to a review channel with Accept/Deny
 - Rich embed mod-log, posted to a channel you choose
+- `/purge` (bulk-delete recent messages, optionally from one member or bots only), `/slowmode`, `/lock` and `/unlock` a channel, `/unban`, `/role add|remove`
+- **Server logs**: a channel recording edited and deleted messages, joins and leaves, nickname and role changes, voice moves, channel and role changes, and bans, including ones done outside the bot. Each kind can be switched off.
+- **Message text in logs is off by default.** Turn it on in `/setup` and pick how many days to keep it; after that the bot edits the text out of old log entries.
 - Role-based permission gates per command scope — on top of, or instead of, Discord's own permission model
-- Slash commands first; legacy `!prefix` commands available as an opt-in
+- Slash commands first; legacy `!warn` / `!kick` / `!ban` / `!cases` available as an opt-in (switch and prefix in `/setup`)
 
 **Utility**
+- `/help` lists what works on your server; `/help command:<name>` explains one command
 - `/userinfo`, `/serverinfo`, `/remind`, `/poll`
 - `/setup`: a feature map of everything the bot does, where you turn each feature on or off and pick its channels and roles. `/config` covers the same settings as commands.
+- Optional [web dashboard](#web-dashboard) (`/dashboard`): the same settings and the case history in a browser, with one-time sign-in links instead of passwords
 
-**Community & fun** (all opt-in, zero cost unless turned on)
+**Community**
+- **Support tickets** (`/ticket`): members press a button to open a private thread with your staff; closing one saves a transcript to a channel you pick
+- **Suggestions** (`/suggest`): ideas posted to a channel with 👍/👎 voting; staff approve or deny with `/suggestion`, and the author gets a DM
+- **Giveaways** (`/giveaway`): enter with a button; winners are drawn and announced automatically, with reroll
+- **Join roles & verification**: give roles on join, and/or a **Verify** button that unlocks the server (stops most spam bots)
+- **Auto-responders** (`/autoresponder`): the bot answers trigger phrases like "how do I join" by itself
+- **Announcements** (`/announce`): styled posts now, later, or every day/week
+- **Join-to-create voice**: joining one channel gives you your own room (`/voice rename|limit|lock`), deleted when empty
+
+**Fun & games** (all opt-in, zero cost unless turned on)
 - `/tag` custom commands, `/quote` archive, `/roll` `/coinflip` `/8ball`
 - `/xp` leveling with role rewards, `/rank`, `/leaderboard`
 - `/starboard`, `/reactionrole` self-assignment
@@ -256,9 +322,9 @@ Idle footprint on a single small guild is roughly **60-100MB RAM** and negligibl
 - `/map`: per-game map pools for game nights; pick at random or open a Discord poll to vote
 - `/jam` (YouTube Watch Together in voice) and opt-in `/music` (the bot plays YouTube songs and playlists), see [Music and watch parties](#music-and-watch-parties)
 
-Any of these can be switched off per server from `/setup`. A switched-off feature's commands say so, and its background work (stream polling, birthday posts, reaction roles) stops for that server.
+Any of these can be switched off per server from `/setup`. A switched-off feature's commands say so, and its background work (stream polling, birthday posts, reaction roles, giveaways, announcements, server logs) stops for that server.
 
-See [`PROJECT.md`](./PROJECT.md) for what's still on the roadmap (plugin architecture, AI-assisted triage, a web dashboard, cross-server features).
+See [`PROJECT.md`](./PROJECT.md) for what's still on the roadmap (plugin architecture, AI-assisted triage, cross-server features).
 
 ## Privileged intents — what's required vs. optional
 
@@ -267,9 +333,10 @@ See [`PROJECT.md`](./PROJECT.md) for what's still on the roadmap (plugin archite
 | Guilds | Everything | Always on, not privileged |
 | Guild Messages | Flood-based spam detection, prefix commands, XP gain | Always on, not privileged |
 | Guild Message Reactions | Starboard, reaction-roles | Always on, not privileged |
-| Guild Voice States | `/jam` and `/music` finding which voice channel you're in | Always on, not privileged; a small cache of who is in voice |
-| **Message Content** (privileged) | Invite-link filter, word filter, mention-spam detection, legacy prefix commands, starboard message text | **Opt-in** via `ENABLE_MESSAGE_CONTENT=true` in `.env`. |
-| **Guild Members** (privileged) | Welcome/goodbye messages, anti-raid join tracking, birthday-role cleanup | **Opt-in** via `ENABLE_GUILD_MEMBERS=true` in `.env`. |
+| Guild Voice States | `/jam`, `/music`, join-to-create voice, voice logs | Always on, not privileged; a small cache of who is in voice |
+| Guild Moderation | Logging bans and unbans done outside the bot | Always on, not privileged |
+| **Message Content** (privileged) | Invite-link filter, word filter, mention-spam detection, legacy prefix commands, auto-responders, `/purge contains:`, message text in server logs and ticket transcripts, starboard message text | **Opt-in** via `ENABLE_MESSAGE_CONTENT=true` in `.env`. |
+| **Guild Members** (privileged) | Welcome/goodbye messages, anti-raid join tracking, join roles, join/leave and nickname/role logs, birthday-role cleanup | **Opt-in** via `ENABLE_GUILD_MEMBERS=true` in `.env`. |
 | **Presence** (privileged) | `/activityrole` (reading Rich Presence game activity) | **Opt-in** via `ENABLE_PRESENCE=true` in `.env` — the most invasive one here, off by default. |
 
 Every slash command, warn/kick/ban/timeout/mute, and flood-based spam detection work with all three privileged intents off. The bot checks this at startup and logs a clear warning if a guild has turned on a feature that needs an intent you haven't enabled, instead of silently doing nothing.
@@ -300,7 +367,8 @@ On boot the bot validates the database is reachable/writable and that the token 
 ## Security & privacy
 
 - No telemetry or analytics. The bot itself never checks for updates. The only update checks are opt-in: the auto-updater (`COMPOSE_PROFILES=autoupdate`, daily, to GitHub's image registry) and, only with music on, yt-dlp updating itself at startup (`MUSIC_AUTO_UPDATE`).
-- Message content is only stored (truncated, attached to auto-mod hits in the mod-log) if you explicitly enable `/config wordfilter` logging behavior — see [`PROJECT.md` §7](./PROJECT.md#7-security--privacy-guidelines).
+- Member message text is never kept in logs unless you turn on **Keep message text** in `/setup` (Auto-mod or Server logs). Even then it's edited out of the log after the number of days you pick (30 by default) — see [`PROJECT.md` §7](./PROJECT.md#7-security--privacy-guidelines).
+- The optional web dashboard listens only on the bot's own computer unless you set up a tunnel or proxy, uses one-time sign-in links (no passwords), re-checks admin rights on every request, and serves script-free pages with a strict Content-Security-Policy. See [Web dashboard](#web-dashboard).
 - Every moderation action is logged with actor, target, reason, and timestamp for your own accountability record — that data never leaves your database.
 
 ## Development

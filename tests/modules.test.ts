@@ -67,8 +67,12 @@ describe('module registry', () => {
     for (const c of cmds) expect(moduleForCommand(c)).toBeDefined();
   });
 
-  it('fits in one Discord select menu (max 25 options)', () => {
-    expect(MODULES.length).toBeLessThanOrEqual(25);
+  it('fits the /setup menus: at most 25 features per group', () => {
+    for (const group of ['Moderation', 'Community', 'Games & fun']) {
+      // +3 for the Moderation essentials (mod-log, permissions, appeals).
+      const n = MODULES.filter((m) => m.group === group).length + (group === 'Moderation' ? 3 : 0);
+      expect(n, group).toBeLessThanOrEqual(25);
+    }
   });
 
   it('only names commands that are actually registered', async () => {
