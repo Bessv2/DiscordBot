@@ -25,6 +25,7 @@ const CORE: { group: ModuleGroup; title: string; commands: string[] }[] = [
       'ban',
       'unban',
       'cases',
+      'exportcases',
       'purge',
       'slowmode',
       'lock',

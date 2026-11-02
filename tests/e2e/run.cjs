@@ -1238,6 +1238,66 @@ async function emitMessage(raw) {
     takeLog();
   }
 
+  heading('Exports, lists and backups');
+  {
+    const http = require('node:http');
+    const { createApp } = require(`${ROOT}/dist/dashboard/server`);
+    const { createLoginToken } = require(`${ROOT}/dist/dashboard/auth`);
+    const { backupDatabase, sqliteFile, backupDir } = require(`${ROOT}/dist/lib/backup`);
+
+    let r = await cmd('exportcases', { user: IDS.mod, options: [opt.str('format', 'csv')] });
+    const sent = JSON.stringify(r.calls);
+    check('/exportcases sends the case history as a file, only to the moderator', /cases-.*\.csv/.test(sent) && /"flags":64/.test(sent), r.text + errText(r));
+    r = await cmd('exportcases', { user: IDS.user });
+    check('regular members cannot export cases', /permission/i.test(r.text));
+
+    await prisma.guildConfig.update({ where: { id: IDS.guild }, data: { modLogChannelId: IDS.modlog } });
+    const srv = http.createServer(createApp(client));
+    await new Promise((res) => srv.listen(0, '127.0.0.1', res));
+    const base = `http://127.0.0.1:${srv.address().port}`;
+    const t = createLoginToken(IDS.admin, IDS.guild);
+    const cookie = ((await fetch(`${base}/login?t=${t}`, { redirect: 'manual' })).headers.get('set-cookie') || '').split(';')[0];
+    let res = await fetch(`${base}/cases/export.csv`, { headers: { cookie } });
+    const csv = await res.text();
+    const total = await prisma.case.count({ where: { guildId: IDS.guild } });
+    check('the dashboard downloads every case as CSV', res.status === 200 && /attachment; filename="cases-/.test(res.headers.get('content-disposition') || '') && csv.trim().split('\r\n').length === total + 1, `${res.status} rows=${csv.trim().split('\r\n').length} cases=${total}`);
+    res = await fetch(`${base}/cases/export.json`, { headers: { cookie } });
+    check('...and as JSON', res.status === 200 && JSON.parse(await res.text()).count === total);
+    check('exports need a signed-in admin', (await fetch(`${base}/cases/export.csv`)).status === 401);
+
+    let html = await (await fetch(`${base}/lists`, { headers: { cookie } })).text();
+    const csrf = (html.match(/name="csrf" value="([^"]+)"/) || [])[1];
+    const post = (path, f) => fetch(base + path, { method: 'POST', redirect: 'manual', headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf, ...f }) });
+    let mark = fake.calls.length;
+    res = await post('/lists/responders', { trigger: 'Server IP', matchType: 'contains', response: 'It is play.example.com' });
+    await fake.settle();
+    check('an auto-response added on the dashboard is saved', res.status === 303 && (await prisma.autoResponder.findFirst({ where: { trigger: 'server ip' } })));
+    check('...and the change is posted to the mod-log', fake.callsSince(mark).some((c) => c.kind === 'send' && c.route.includes(IDS.modlog) && /web dashboard/.test(JSON.stringify(c.body))));
+    const before = fake.calls.length;
+    await emitMessage(userMessage(IDS.user, 'what is the server ip?', IDS.welcome));
+    await fake.settle();
+    check('...and the bot answers with it straight away', fake.callsSince(before).some((c) => c.kind === 'send' && /play\.example\.com/.test(JSON.stringify(c.body))));
+    res = await post('/lists/tags', { name: 'rules', content: 'Be nice.' });
+    check('tags can be added from the dashboard', res.status === 303 && (await prisma.tag.findFirst({ where: { name: 'rules' } }))?.content === 'Be nice.');
+    res = await post('/lists/tags', { name: 'two words', content: 'x' });
+    check('a bad tag name is refused', res.status === 400);
+    res = await post('/lists/rewards', { level: '5', roleId: IDS.rHigh });
+    check('a level reward above your own role is refused', res.status === 400 && /above/.test(await res.text()));
+    res = await post('/lists/rewards', { level: '5', roleId: IDS.rReward });
+    check('a level reward can be added', res.status === 303 && (await prisma.levelRoleReward.findFirst({ where: { level: 5 } }))?.roleId === IDS.rReward);
+    const tag = await prisma.tag.findFirst({ where: { name: 'rules' } });
+    res = await post(`/lists/tags/${tag.id}/delete`, {});
+    check('list items can be removed', res.status === 303 && !(await prisma.tag.findFirst({ where: { name: 'rules' } })));
+    res = await post('/lists/tags/999999/delete', {});
+    check('removing something from another server (or nothing) is refused', res.status === 404);
+    await new Promise((r2) => srv.close(r2));
+
+    const dest = await backupDatabase(3);
+    check('a backup is a copy of the live database, made while it runs', require('node:fs').statSync(dest).size > 0 && dest.startsWith(backupDir(sqliteFile())));
+    require('node:fs').rmSync(backupDir(sqliteFile()), { recursive: true, force: true });
+    takeLog();
+  }
+
   // ── report ──────────────────────────────────────────────────────────────
   const failed = results.filter((r) => !r.ok);
   out(`\n${results.length - failed.length}/${results.length} checks passed${failed.length ? `, ${failed.length} failed:` : '.'}`);

@@ -20,7 +20,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "postinstall": "prisma generate",
-    "test:e2e": "node tests/e2e/run.cjs"
+    "test:e2e": "node tests/e2e/run.cjs",
+    "backup": "node dist/scripts/backup.js"
   },
   "dependencies": {
     "@prisma/client": "^5.20.0",

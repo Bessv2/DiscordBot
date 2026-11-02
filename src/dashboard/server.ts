@@ -41,6 +41,10 @@ import { ApiStatus, addonsPage } from './addonsPage';
 import { ADDON_KINDS, parseHookBody } from '../addons/parse';
 import { checkAddonNow, createAddon, handleHook } from '../addons/runner';
 import { syncNativeAutomod } from '../automod/native';
+import { postModLogNote } from '../lib/modlog';
+import { casesToCsv, casesToJson, exportFileName } from '../lib/caseExport';
+import { ListsData, listsPage } from './listsPage';
+import { MAX_RESPONDERS, invalidateResponders } from '../features/autoResponders';
 
 const COOKIE = 'dash_sid';
 
@@ -106,6 +110,15 @@ export function createApp(client: Client): express.Express {
 
   const fail = (res: Response, status: number, title: string, text: string) =>
     res.status(status).type('html').send(messagePage(title, text));
+
+  // Every change made here is also posted to the mod-log, so the server's
+  // other moderators see it the same as a command.
+  const note = (ctx: Ctx, change: string) =>
+    postModLogNote(ctx.guild, {
+      title: '⚙️ Changed on the web dashboard',
+      moderator: ctx.member.user,
+      fields: [{ name: 'Change', value: change }],
+    }).catch(() => undefined);
 
   app.get('/login', (req, res) => {
     const t = typeof req.query.t === 'string' ? req.query.t : '';
@@ -262,6 +275,7 @@ export function createApp(client: Client): express.Express {
     const on = !isModuleOn(gc, id);
     await setModuleOn(ctx.guild.id, id, on);
     if (id === 'automod') await syncNativeAutomod(ctx.guild).catch(() => undefined);
+    void note(ctx, `Turned **${getModule(id).name}** ${on ? 'on' : 'off'}.`);
     logger.info(
       `Dashboard: ${ctx.member.user.tag} turned ${id} ${on ? 'on' : 'off'} in ${ctx.guild.id}`,
     );
@@ -415,10 +429,19 @@ export function createApp(client: Client): express.Express {
       await prisma.guildConfig.update({ where: { id: ctx.guild.id }, data });
     for (const p of perms) await setPermissionRoles(ctx.guild.id, p.scope, p.ids);
     logger.info(`Dashboard: ${ctx.member.user.tag} saved ${page.id} settings in ${ctx.guild.id}`);
+    void note(ctx, `Saved the **${page.title}** settings.`);
     if (page.id === 'automod' || page.id === 'permissions') {
-      const err = await syncNativeAutomod(ctx.guild, page.id === 'automod').catch((e: Error) => e.message);
+      const err = await syncNativeAutomod(ctx.guild, page.id === 'automod').catch(
+        (e: Error) => e.message,
+      );
       if (err) {
-        res.type('html').send(await renderFeature(ctx, page.id, undefined, [`Saved, but: ${err.replace(/\*\*/g, '')}`]));
+        res
+          .type('html')
+          .send(
+            await renderFeature(ctx, page.id, undefined, [
+              `Saved, but: ${err.replace(/\*\*/g, '')}`,
+            ]),
+          );
         return;
       }
     }
@@ -541,34 +564,31 @@ export function createApp(client: Client): express.Express {
     logger.info(
       `Dashboard: ${ctx.member.user.tag} added add-on #${created.addon.id} (${kind}) in ${ctx.guild.id}`,
     );
+    void note(ctx, `Added add-on **#${created.addon.id} ${created.addon.name}** (${kind}).`);
     if (created.secret) {
       // Shown once, on this response only; it isn't stored, so it can't be shown again.
-      res
-        .type('html')
-        .send(
-          await renderAddons(ctx, {
-            newHook: {
-              id: created.addon.id,
-              name: created.addon.name,
-              url: `${dashboardUrl()}/hooks/${created.addon.id}/${created.secret}`,
-            },
-          }),
-        );
+      res.type('html').send(
+        await renderAddons(ctx, {
+          newHook: {
+            id: created.addon.id,
+            name: created.addon.name,
+            url: `${dashboardUrl()}/hooks/${created.addon.id}/${created.secret}`,
+          },
+        }),
+      );
       return;
     }
     const check = await checkAddonNow(client, created.addon);
-    res
-      .type('html')
-      .send(
-        await renderAddons(
-          ctx,
-          check.ok
-            ? { notice: `Added "${created.addon.name}": ${check.message}.` }
-            : {
-                error: `Added "${created.addon.name}", but the first check failed: ${check.message}`,
-              },
-        ),
-      );
+    res.type('html').send(
+      await renderAddons(
+        ctx,
+        check.ok
+          ? { notice: `Added "${created.addon.name}": ${check.message}.` }
+          : {
+              error: `Added "${created.addon.name}", but the first check failed: ${check.message}`,
+            },
+      ),
+    );
   });
 
   app.post('/addons/:id/:action', async (req, res) => {
@@ -586,11 +606,16 @@ export function createApp(client: Client): express.Express {
       logger.info(
         `Dashboard: ${ctx.member.user.tag} removed add-on #${addon.id} in ${ctx.guild.id}`,
       );
+      void note(ctx, `Removed add-on **#${addon.id} ${addon.name}**.`);
       res.redirect(303, '/addons?done=removed');
       return;
     }
     if (action === 'toggle') {
       await prisma.addon.update({ where: { id: addon.id }, data: { enabled: !addon.enabled } });
+      void note(
+        ctx,
+        `${addon.enabled ? 'Paused' : 'Resumed'} add-on **#${addon.id} ${addon.name}**.`,
+      );
       res.redirect(303, `/addons?done=${addon.enabled ? 'paused' : 'resumed'}`);
       return;
     }
@@ -605,6 +630,173 @@ export function createApp(client: Client): express.Express {
             : { error: `"${addon.name}": ${check.message}` },
         ),
       );
+  });
+
+  app.get('/cases/export.:format', async (req, res) => {
+    const ctx = res.locals.ctx as Ctx;
+    const format =
+      req.params.format === 'json' ? 'json' : req.params.format === 'csv' ? 'csv' : null;
+    if (!format) {
+      fail(res, 404, 'Not found', 'Exports are .csv or .json.');
+      return;
+    }
+    const cases = await prisma.case.findMany({
+      where: { guildId: ctx.guild.id },
+      orderBy: { caseNumber: 'asc' },
+    });
+    res
+      .status(200)
+      .type(format === 'csv' ? 'text/csv; charset=utf-8' : 'application/json; charset=utf-8')
+      .set(
+        'Content-Disposition',
+        `attachment; filename="${exportFileName(ctx.guild.name, format)}"`,
+      )
+      .send(format === 'csv' ? casesToCsv(cases) : casesToJson(ctx.guild.id, cases));
+  });
+
+  async function renderLists(
+    ctx: Ctx,
+    opts: { notice?: string; error?: string } = {},
+  ): Promise<string> {
+    const gid = ctx.guild.id;
+    const [responders, tags, rewards, announcements] = await Promise.all([
+      prisma.autoResponder.findMany({ where: { guildId: gid }, orderBy: { trigger: 'asc' } }),
+      prisma.tag.findMany({ where: { guildId: gid }, orderBy: { name: 'asc' } }),
+      prisma.levelRoleReward.findMany({ where: { guildId: gid }, orderBy: { level: 'asc' } }),
+      prisma.scheduledMessage.findMany({ where: { guildId: gid }, orderBy: { nextRunAt: 'asc' } }),
+    ]);
+    const data: ListsData = {
+      responders,
+      tags,
+      rewards: rewards.map((r) => ({
+        id: r.id,
+        level: r.level,
+        roleName: ctx.guild.roles.cache.get(r.roleId)?.name ?? 'deleted-role',
+      })),
+      announcements: announcements.map((a) => ({
+        ...a,
+        channelName: ctx.guild.channels.cache.get(a.channelId)?.name ?? 'deleted-channel',
+      })),
+    };
+    return listsPage(
+      shellFor(ctx),
+      data,
+      pickableRoles(ctx.guild).map((r) => ({ id: r.id, name: r.name })),
+      opts,
+    );
+  }
+
+  const field = (req: Request, k: string): string => {
+    const v = (req.body as Body)[k];
+    return (Array.isArray(v) ? v[v.length - 1] : v)?.trim() ?? '';
+  };
+
+  app.get('/lists', async (req, res) => {
+    const ctx = res.locals.ctx as Ctx;
+    res
+      .type('html')
+      .send(await renderLists(ctx, { notice: req.query.done === '1' ? 'Saved.' : undefined }));
+  });
+
+  app.post('/lists/:list', async (req, res) => {
+    const ctx = res.locals.ctx as Ctx;
+    const gid = ctx.guild.id;
+    const bad = async (error: string) => {
+      res
+        .status(400)
+        .type('html')
+        .send(await renderLists(ctx, { error }));
+    };
+    await getOrCreateGuildConfig(gid);
+    switch (req.params.list) {
+      case 'responders': {
+        const trigger = field(req, 'trigger').toLowerCase();
+        const response = field(req, 'response');
+        const matchType = ['contains', 'exact', 'starts'].includes(field(req, 'matchType'))
+          ? field(req, 'matchType')
+          : 'contains';
+        if (trigger.length < 2 || trigger.length > 100)
+          return bad('The trigger must be 2–100 characters.');
+        if (!response || response.length > 1500) return bad('The reply must be 1–1500 characters.');
+        const exists = await prisma.autoResponder.findUnique({
+          where: { guildId_trigger: { guildId: gid, trigger } },
+        });
+        if (
+          !exists &&
+          (await prisma.autoResponder.count({ where: { guildId: gid } })) >= MAX_RESPONDERS
+        )
+          return bad(`You've hit the limit of ${MAX_RESPONDERS} auto-responses. Remove one first.`);
+        await prisma.autoResponder.upsert({
+          where: { guildId_trigger: { guildId: gid, trigger } },
+          create: { guildId: gid, trigger, response, matchType, createdBy: ctx.member.id },
+          update: { response, matchType },
+        });
+        invalidateResponders(gid);
+        void note(ctx, `${exists ? 'Updated' : 'Added'} the auto-response for **${trigger}**.`);
+        break;
+      }
+      case 'tags': {
+        const name = field(req, 'name').toLowerCase();
+        const content = field(req, 'content');
+        if (!/^\S{1,32}$/.test(name)) return bad('Tag names are 1–32 characters with no spaces.');
+        if (!content || content.length > 2000) return bad('Tag content must be 1–2000 characters.');
+        await prisma.tag.upsert({
+          where: { guildId_name: { guildId: gid, name } },
+          create: { guildId: gid, name, content, createdBy: ctx.member.id },
+          update: { content },
+        });
+        void note(ctx, `Saved the tag **${name}**.`);
+        break;
+      }
+      case 'rewards': {
+        const level = Number(field(req, 'level'));
+        const role = ctx.guild.roles.cache.get(field(req, 'roleId'));
+        if (!Number.isInteger(level) || level < 1 || level > 1000)
+          return bad('The level must be a whole number from 1 to 1000.');
+        if (!role || !pickableRoles(ctx.guild).some((r) => r.id === role.id))
+          return bad("That role isn't on this server.");
+        const ok = await checkRoleAssignable(ctx.guild, ctx.member, role);
+        if (!ok.allowed) return bad(`@${role.name}: ${ok.reason}`);
+        await prisma.levelRoleReward.upsert({
+          where: { guildId_level: { guildId: gid, level } },
+          create: { guildId: gid, level, roleId: role.id },
+          update: { roleId: role.id },
+        });
+        void note(ctx, `Level ${level} now gives **@${role.name}**.`);
+        break;
+      }
+      default:
+        fail(res, 404, 'Not found', "There's no such list.");
+        return;
+    }
+    res.redirect(303, '/lists?done=1');
+  });
+
+  app.post('/lists/:list/:id/delete', async (req, res) => {
+    const ctx = res.locals.ctx as Ctx;
+    const where = { id: Number(req.params.id) || -1, guildId: ctx.guild.id };
+    let count = 0;
+    switch (req.params.list) {
+      case 'responders':
+        count = (await prisma.autoResponder.deleteMany({ where })).count;
+        invalidateResponders(ctx.guild.id);
+        break;
+      case 'tags':
+        count = (await prisma.tag.deleteMany({ where })).count;
+        break;
+      case 'rewards':
+        count = (await prisma.levelRoleReward.deleteMany({ where })).count;
+        break;
+      case 'announcements':
+        count = (await prisma.scheduledMessage.deleteMany({ where })).count;
+        break;
+    }
+    if (!count) {
+      fail(res, 404, 'Not found', "That item isn't on this server (maybe it was already removed).");
+      return;
+    }
+    void note(ctx, `Removed an item from **${req.params.list}** (id ${where.id}).`);
+    res.redirect(303, '/lists?done=1');
   });
 
   app.get('/cases', async (req, res) => {

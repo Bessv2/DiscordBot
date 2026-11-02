@@ -89,6 +89,10 @@ const envSchema = z.object({
     .optional()
     .transform((v) => v === 'true'),
 
+  // Daily database backups kept in a backups/ folder next to the database
+  // (./data/backups with Docker). 0 turns them off.
+  BACKUP_KEEP: blankIsUnset(z.coerce.number().int().min(0).max(365).default(7)),
+
   // Optional integrations below — every one of them fails closed (feature
   // just doesn't run, logged once) rather than crashing when unset.
   TWITCH_CLIENT_ID: z.string().optional(),

@@ -44,6 +44,7 @@ import { roleCommand } from './moderation/role';
 import { helpCommand } from './utility/help';
 import { dashboardCommand } from './setup/dashboard';
 import { addonsCommand } from './community/addons';
+import { exportcasesCommand } from './moderation/exportcases';
 import { ticketCommand } from './community/ticket';
 import { giveawayCommand } from './community/giveaway';
 import { suggestCommand, suggestionCommand } from './community/suggest';
@@ -101,6 +102,7 @@ export const commands: Command[] = [
   helpCommand,
   dashboardCommand,
   addonsCommand,
+  exportcasesCommand,
   ticketCommand,
   giveawayCommand,
   suggestCommand,
