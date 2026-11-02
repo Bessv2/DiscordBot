@@ -176,6 +176,10 @@ This works the same for the music image (`BOT_IMAGE_TAG=music`): `pull` download
 
 In `.env`, set `COMPOSE_PROFILES=autoupdate`, then run `docker compose up -d` once. From then on, the bot checks for a new version once a day at 04:00 and installs it by itself, with a quick restart. It's off unless you turn it on, because it means your computer checks GitHub daily. To turn it off again, empty that line and run `docker compose up -d`.
 
+### Staying on one version
+
+`latest` always means the newest release. To stay on a particular version, set `BOT_IMAGE_TAG` in `.env` to its number, e.g. `BOT_IMAGE_TAG=1.0.0` (with music: `1.0.0-music`), and run `docker compose up -d`. To go back to an earlier version after an update, do the same with the older number, and restore the backup from before the update if the release notes mention a database change. Versions and what changed are listed in [`CHANGELOG.md`](./CHANGELOG.md).
+
 ### When a release changes the bot's files
 
 Most updates are just the image above. Occasionally a release also changes `docker-compose.yml` or adds new settings to `.env.example`, and the release notes say so. Then, before running the two lines:
@@ -255,7 +259,7 @@ Server admins can pick a **DJ role** in `/setup` → Music. Then only DJs, moder
 
 ## Web dashboard
 
-An optional web page with the same settings as `/setup`: every feature's on/off switch, its channels, roles and limits, who can moderate, and a searchable case history. It's **off by default**, and everything it does can also be done in Discord.
+An optional web page with the same settings as `/setup`: every feature's on/off switch, its channels, roles and limits, who can moderate, [add-ons](#add-ons), lists (auto-responses, tags, level rewards, scheduled announcements), and a searchable case history you can download. Every change made there is also posted to the mod-log. It's **off by default**, and everything it does can also be done in Discord.
 
 **How sign-in works.** There are no passwords and nothing to register. A server admin types `/dashboard` in Discord and gets a private link that only they can see. It works once, within 10 minutes, and signs them in for that one server for up to 12 hours. Every page and every save checks again that they're still an admin there, so taking away someone's admin role locks them out straight away. Restarting the bot signs everyone out.
 
@@ -277,6 +281,28 @@ Don't publish it on plain `http://` over the internet: the sign-in link and cook
 
 **What it costs.** It runs inside the bot (no extra container) and adds a few MB of memory while it's on. With it off, its code isn't even loaded.
 
+## Add-ons
+
+Have the bot post from other places. Add them with `/addons add` in Discord or on the dashboard's **Add-ons** page; up to 25 per server, each posting in the channel you pick, with an optional role to ping.
+
+| Type | What it posts | Needs |
+| --- | --- | --- |
+| RSS / Atom feed | New items from any feed: game patch notes, blogs, subreddits (add `.rss` to the address), YouTube uploads (`youtube.com/feeds/videos.xml?channel_id=...`) | The feed's address |
+| Steam game news | A game's news and patch notes | The Steam app ID (the number in its store address) |
+| Epic free games | Each game the Epic Games Store gives away, once | Nothing |
+| Game server up/down | When your Minecraft, Valheim, Ark (and ~180 more) server goes offline or comes back, checked every 5 minutes | `game\|host\|port` |
+| Incoming webhook | Messages other apps send to a private address: game-server plugins, home automation, scripts. It takes the same JSON as a Discord webhook (`{"content": "..."}`), or plain text | The [web dashboard](#web-dashboard) on, and reachable by the sending app |
+
+A new feed doesn't flood the channel with its history: only items that appear after you add it are posted, at most 3 per check. `/addons list` and the dashboard show whether each one is working, and why not if it isn't. The dashboard's **Connected APIs** list shows which optional API keys (Twitch, YouTube, Steam, Riot) the host has set.
+
+## AI triage (optional)
+
+An AI reads new messages and sends the ones that look harmful (harassment, hate, threats, scams, self-harm) to a review channel with **Delete message** and **Looks fine** buttons. It never deletes, warns or bans by itself: a moderator always decides.
+
+**For the host:** set `AI_TRIAGE_API_KEY` in `.env` to your own key from [console.anthropic.com](https://console.anthropic.com) (it needs `ENABLE_MESSAGE_CONTENT=true` too), then run `docker compose up -d`. You pay Anthropic per message checked; `AI_TRIAGE_MAX_PER_MINUTE` (default 20) caps how many are checked per server per minute, and `AI_TRIAGE_MODEL` picks the Claude model (default `claude-opus-5-5`). Message text from servers that turn it on is sent to Anthropic's API.
+
+**For a server:** `/setup` → **AI triage**: turn it on and pick a review channel (the mod-log by default). Moderators' own messages aren't checked. Tell your members if you use it.
+
 ## Resource baseline
 
 Idle footprint on a single small guild is roughly **60-100MB RAM** and negligible CPU — comfortable on a $5/month VPS or a Raspberry Pi. No Redis, no message queue, and no separate database server required at this scale (SQLite is the default). The optional integrations (`/streamwatch`, birthdays) poll on a 5-minute timer rather than holding connections open, so turning them on doesn't change this baseline meaningfully — the cost scales with how many channels/streamers you watch, not with being enabled at all.
@@ -294,10 +320,15 @@ Idle footprint on a single small guild is roughly **60-100MB RAM** and negligibl
 - **Message text in logs is off by default.** Turn it on in `/setup` and pick how many days to keep it; after that the bot edits the text out of old log entries.
 - Role-based permission gates per command scope — on top of, or instead of, Discord's own permission model
 - Slash commands first; legacy `!warn` / `!kick` / `!ban` / `!cases` available as an opt-in (switch and prefix in `/setup`)
+- **Discord's own AutoMod** (optional, per server): the invite, word and mention filters run as Discord AutoMod rules the bot keeps in sync, so they block messages before anyone sees them and work without Message Content. Needs the bot to have Manage Server.
+- **Ban sharing** (`/bannetwork`): servers you trust that use this same bot share bans, as a mod-log alert with a "Ban here too" button or as an automatic ban
+- **AI triage** (optional, off by default): an AI sends messages that look harmful to a review channel for a moderator to decide. It never acts on its own. See [AI triage](#ai-triage-optional).
+- **Case export** (`/exportcases`, or the dashboard): the whole case history as a spreadsheet (CSV) or JSON
 
 **Utility**
 - `/help` lists what works on your server; `/help command:<name>` explains one command
 - `/userinfo`, `/serverinfo`, `/remind`, `/poll`
+- **Add-ons** (`/addons`, or the dashboard): post news feeds and patch notes, Steam game news, Epic free games, game-server up/down alerts, and messages from other apps (webhooks). See [Add-ons](#add-ons).
 - `/setup`: a feature map of everything the bot does, where you turn each feature on or off and pick its channels and roles. `/config` covers the same settings as commands.
 - Optional [web dashboard](#web-dashboard) (`/dashboard`): the same settings and the case history in a browser, with one-time sign-in links instead of passwords
 
@@ -322,9 +353,13 @@ Idle footprint on a single small guild is roughly **60-100MB RAM** and negligibl
 - `/map`: per-game map pools for game nights; pick at random or open a Discord poll to vote
 - `/jam` (YouTube Watch Together in voice) and opt-in `/music` (the bot plays YouTube songs and playlists), see [Music and watch parties](#music-and-watch-parties)
 
+**For the host**
+- **Plugins** (optional): add your own commands as `.js` files without changing the bot. See [`docs/PLUGINS.md`](./docs/PLUGINS.md).
+- **Daily backups** of the database, kept for a week by default, and `npm run backup` any time. See [Backups](#backups--upgrades).
+
 Any of these can be switched off per server from `/setup`. A switched-off feature's commands say so, and its background work (stream polling, birthday posts, reaction roles, giveaways, announcements, server logs) stops for that server.
 
-See [`PROJECT.md`](./PROJECT.md) for what's still on the roadmap (plugin architecture, AI-assisted triage, cross-server features).
+See [`PROJECT.md`](./PROJECT.md) for what's still on the roadmap (cross-server announcements).
 
 ## Privileged intents — what's required vs. optional
 
@@ -335,7 +370,7 @@ See [`PROJECT.md`](./PROJECT.md) for what's still on the roadmap (plugin archite
 | Guild Message Reactions | Starboard, reaction-roles | Always on, not privileged |
 | Guild Voice States | `/jam`, `/music`, join-to-create voice, voice logs | Always on, not privileged; a small cache of who is in voice |
 | Guild Moderation | Logging bans and unbans done outside the bot | Always on, not privileged |
-| **Message Content** (privileged) | Invite-link filter, word filter, mention-spam detection, legacy prefix commands, auto-responders, `/purge contains:`, message text in server logs and ticket transcripts, starboard message text | **Opt-in** via `ENABLE_MESSAGE_CONTENT=true` in `.env`. |
+| **Message Content** (privileged) | Invite-link filter, word filter, mention-spam detection (unless the server uses Discord's AutoMod for them), AI triage, plugins that read messages, legacy prefix commands, auto-responders, `/purge contains:`, message text in server logs and ticket transcripts, starboard message text | **Opt-in** via `ENABLE_MESSAGE_CONTENT=true` in `.env`. |
 | **Guild Members** (privileged) | Welcome/goodbye messages, anti-raid join tracking, join roles, join/leave and nickname/role logs, birthday-role cleanup | **Opt-in** via `ENABLE_GUILD_MEMBERS=true` in `.env`. |
 | **Presence** (privileged) | `/activityrole` (reading Rich Presence game activity) | **Opt-in** via `ENABLE_PRESENCE=true` in `.env` — the most invasive one here, off by default. |
 
@@ -356,7 +391,10 @@ SQLite is the zero-setup default. To scale up:
 
 ## Backups & upgrades
 
-- [`docs/BACKUP.md`](./docs/BACKUP.md) — one command to back up the database.
+- **Automatic:** once a day the bot saves a copy of its database to `data/backups/`, safely while it runs, and keeps the last 7 (`BACKUP_KEEP` in `.env`; `0` turns it off).
+- **Any time:** `docker compose exec bot npm run backup` (without Docker: `npm run backup`). Works the same on Windows, Mac and Linux.
+- **Restoring:** stop the bot (`docker compose down`), copy the backup you want over `data/bot.db`, start it again (`docker compose up -d`).
+- [`docs/BACKUP.md`](./docs/BACKUP.md) — more on backups, including Postgres.
 - [`docs/UPGRADING.md`](./docs/UPGRADING.md) — pulling a new version and running migrations without losing data.
 - [`docs/TESTING.md`](./docs/TESTING.md) — a self-contained walkthrough for a friend/tester to clone this, stand up their own bot, and try it against a throwaway server.
 
@@ -369,6 +407,9 @@ On boot the bot validates the database is reachable/writable and that the token 
 - No telemetry or analytics. The bot itself never checks for updates. The only update checks are opt-in: the auto-updater (`COMPOSE_PROFILES=autoupdate`, daily, to GitHub's image registry) and, only with music on, yt-dlp updating itself at startup (`MUSIC_AUTO_UPDATE`).
 - Member message text is never kept in logs unless you turn on **Keep message text** in `/setup` (Auto-mod or Server logs). Even then it's edited out of the log after the number of days you pick (30 by default) — see [`PROJECT.md` §7](./PROJECT.md#7-security--privacy-guidelines).
 - The optional web dashboard listens only on the bot's own computer unless you set up a tunnel or proxy, uses one-time sign-in links (no passwords), re-checks admin rights on every request, and serves script-free pages with a strict Content-Security-Policy. See [Web dashboard](#web-dashboard).
+- **AI triage** is off unless the host sets their own `AI_TRIAGE_API_KEY` **and** a server turns it on. Message text from those servers is then sent to Anthropic's API (Claude) for classification; nothing goes through a service this project runs. It only suggests: moderators decide.
+- **Add-ons** fetch only addresses server admins add, and refuse private and local addresses (the host's own network) unless the host allows it with `ADDONS_ALLOW_PRIVATE_NETWORK`.
+- **Plugins** run with the bot's full access, so they're off by default and only load files the host puts in the plugins folder.
 - Every moderation action is logged with actor, target, reason, and timestamp for your own accountability record — that data never leaves your database.
 
 ## Development
