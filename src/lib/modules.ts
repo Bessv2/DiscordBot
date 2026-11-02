@@ -41,7 +41,8 @@ export type ModuleId =
   | 'autoresponders'
   | 'announcements'
   | 'tempvoice'
-  | 'addons';
+  | 'addons'
+  | 'bannetwork';
 
 export type ModuleGroup = 'Moderation' | 'Community' | 'Games & fun';
 
@@ -376,6 +377,16 @@ export const MODULES: ModuleDef[] = [
     group: 'Community',
     blurb: 'Post from other places: news feeds, Steam game news, Epic free games, game servers going up or down, and other apps via webhooks.',
     commands: ['addons'],
+    toggle: { kind: 'list' },
+    defaultOn: true,
+  },
+  {
+    id: 'bannetwork',
+    name: 'Ban sharing',
+    emoji: '🔗',
+    group: 'Moderation',
+    blurb: 'Share bans with other servers you trust that use this same bot: an alert with a "Ban here too" button, or an automatic ban.',
+    commands: ['bannetwork'],
     toggle: { kind: 'list' },
     defaultOn: true,
   },

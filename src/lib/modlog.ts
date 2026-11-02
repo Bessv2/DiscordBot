@@ -34,7 +34,7 @@ export interface AutomodLogEntry {
   contentSnippet?: string;
 }
 
-async function resolveModLogChannel(guild: Guild): Promise<SendableChannels | null> {
+export async function resolveModLogChannel(guild: Guild): Promise<SendableChannels | null> {
   const guildConfig = await prisma.guildConfig.findUnique({ where: { id: guild.id } });
   if (!guildConfig?.modLogChannelId) {
     logger.debug(`[modlog] No mod-log channel configured for guild ${guild.id}; skipping embed.`);

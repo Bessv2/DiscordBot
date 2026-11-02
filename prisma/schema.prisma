@@ -38,6 +38,11 @@ model GuildConfig {
   // the last sync error.
   nativeAutomod      Boolean @default(false)
   nativeAutomodState String  @default("{}")
+  // Optional AI triage: flags likely-harmful messages for a human to review
+  // in aiTriageChannelId. Never acts by itself. Also needs the host's
+  // AI_TRIAGE_* settings and Message Content.
+  aiTriageEnabled   Boolean @default(false)
+  aiTriageChannelId String?
   contentRetainDays Int     @default(30)
 
   // Legacy prefix commands, opt-in per guild on top of the global env flag.
@@ -155,6 +160,7 @@ model GuildConfig {
   tempVoiceChannels      TempVoiceChannel[]
   scheduledMessages      ScheduledMessage[]
   addons                 Addon[]
+  banNetworkMember       BanNetworkMember?
 
   @@map("guild_configs")
 }
@@ -654,4 +660,31 @@ model Addon {
 
   @@index([guildId])
   @@map("addons")
+}
+
+// Ban sharing between servers that run on this same bot. Joining needs the
+// network's code (stored hashed) and admin rights in the joining server.
+model BanNetwork {
+  id           Int      @id @default(autoincrement())
+  name         String
+  joinCodeHash String   @unique
+  ownerGuildId String
+  createdAt    DateTime @default(now())
+
+  members BanNetworkMember[]
+
+  @@map("ban_networks")
+}
+
+model BanNetworkMember {
+  guildId   String   @id // a server is in at most one network
+  networkId Int
+  mode      String   @default("alert") // alert | ban
+  joinedAt  DateTime @default(now())
+
+  network BanNetwork  @relation(fields: [networkId], references: [id], onDelete: Cascade)
+  guild   GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([networkId])
+  @@map("ban_network_members")
 }

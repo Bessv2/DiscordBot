@@ -1564,6 +1564,17 @@ const panels: Record<PanelId, Panel> = {
         ? null
         : 'This needs **Message Content** (ENABLE_MESSAGE_CONTENT) to read messages.',
   ),
+  bannetwork: simplePanel(
+    'bannetwork',
+    '🔗 Ban sharing',
+    'If you run several servers (or partner with ones you trust) on this same bot, share bans between them: a ban in one shows up in the others, as a mod-log alert with a "Ban here too" button, or as an automatic ban.',
+    [
+      '`/bannetwork create name:...` in one server, which gives a join code',
+      '`/bannetwork join code:... mode:...` in the others',
+      '`/bannetwork status`, `/bannetwork mode` and `/bannetwork leave`',
+      'Alerts go to the mod-log channel, so pick one first.',
+    ],
+  ),
   addons: simplePanel(
     'addons',
     '🧩 Add-ons',

@@ -11,6 +11,7 @@ import { logger } from '../lib/logger';
 import { channelCreate } from '../events/channelCreate';
 import { voiceStateUpdate } from '../events/voiceStateUpdate';
 import * as serverLog from '../serverlog/handlers';
+import { onBanForNetwork } from '../features/banNetwork';
 
 // One failing handler (a busy SQLite file during a backup, a Discord API
 // hiccup) must never take the whole bot offline — log it and keep serving.
@@ -51,6 +52,7 @@ export function loadEvents(client: Client): void {
   client.on('roleDelete', safe('roleDelete', serverLog.onRoleDelete));
   client.on('roleUpdate', safe('roleUpdate', serverLog.onRoleUpdate));
   client.on('guildBanAdd', safe('guildBanAdd', serverLog.onGuildBanAdd));
+  client.on('guildBanAdd', safe('guildBanAdd', onBanForNetwork));
   client.on('guildBanRemove', safe('guildBanRemove', serverLog.onGuildBanRemove));
   client.on('error', (err) => logger.error(`Discord client error: ${err.message}`));
 }

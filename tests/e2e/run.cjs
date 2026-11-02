@@ -1298,6 +1298,56 @@ async function emitMessage(raw) {
     takeLog();
   }
 
+  heading('Ban sharing');
+  {
+    const { onBanForNetwork } = require(`${ROOT}/dist/features/banNetwork`);
+    let r = await cmd('bannetwork', { sub: 'create', user: IDS.admin, options: [opt.str('name', 'Our community')] });
+    const code = (r.text.match(/`(ban-[^`]+)`/) || [])[1];
+    check('/bannetwork create gives a one-time join code', code && (await prisma.banNetwork.count()) === 1 && !(await prisma.banNetwork.findFirst()).joinCodeHash.includes(code), r.text);
+    r = await cmd('bannetwork', { sub: 'join', user: IDS.admin, options: [opt.str('code', code)] });
+    check("a server can't join twice", /already in a ban network/.test(r.text));
+    r = await cmd('bannetwork', { sub: 'create', user: IDS.user, options: [opt.str('name', 'x')] });
+    check('regular members cannot manage ban sharing', /permission/i.test(r.text));
+
+    // A partner server on the same bot (outside the simulated one) joins, then bans someone.
+    await prisma.guildConfig.upsert({ where: { id: 'G2' }, update: {}, create: { id: 'G2' } });
+    const net = await prisma.banNetwork.findFirst();
+    await prisma.banNetworkMember.create({ data: { guildId: 'G2', networkId: net.id, mode: 'alert' } });
+    const partner = { id: 'G2', name: 'Partner Server', client, bans: { fetch: async () => null } };
+    let mark = fake.calls.length;
+    await onBanForNetwork({ guild: partner, user: client.users.cache.get(IDS.target) ?? (await client.users.fetch(IDS.target)), reason: 'raiding' });
+    await fake.settle();
+    const alertMsg = fake.callsSince(mark).find((c) => c.kind === 'send' && /Ban here too/.test(JSON.stringify(c.body)));
+    check('a ban in a partner server shows up in our mod-log with a "Ban here too" button', alertMsg && alertMsg.route.includes(IDS.modlog) && /raiding/.test(JSON.stringify(alertMsg.body)) && !fake.callsSince(mark).some((c) => c.kind === 'ban'));
+    mark = fake.calls.length;
+    await onBanForNetwork({ guild: partner, user: await client.users.fetch(IDS.target), reason: 'raiding' });
+    await fake.settle();
+    check('the same ban is not alerted twice', !fake.callsSince(mark).some((c) => c.kind === 'send'));
+    if (alertMsg) {
+      const posted = fake.msg(IDS.modlog, alertMsg.body, { author: USERS[IDS.bot] });
+      r = await click(posted, `bannet_ban:${IDS.target}`, { user: IDS.user });
+      check('only moderators can use "Ban here too"', /permission/i.test(r.text) && !r.calls.some((c) => c.kind === 'ban'));
+      r = await click(posted, `bannet_ban:${IDS.target}`, { user: IDS.mod });
+      check('"Ban here too" bans with a case that names the source', r.calls.some((c) => c.kind === 'ban') && (await prisma.case.findFirst({ where: { targetId: IDS.target, type: 'ban', reason: { startsWith: 'Shared ban from Partner Server' } } })), r.text + errText(r));
+    }
+    await prisma.banNetworkMember.update({ where: { guildId: IDS.guild }, data: { mode: 'ban' } });
+    fake.bans.delete(IDS.user2);
+    mark = fake.calls.length;
+    await onBanForNetwork({ guild: partner, user: await client.users.fetch(IDS.user2), reason: 'scam links' });
+    await fake.settle();
+    check('in "ban" mode the bot bans here automatically', fake.callsSince(mark).some((c) => c.kind === 'ban' && c.route.includes(IDS.user2)));
+    mark = fake.calls.length;
+    await onBanForNetwork({ guild: partner, user: await client.users.fetch(IDS.user), reason: 'Shared ban from Elsewhere: x' });
+    await fake.settle();
+    check('bans that were themselves shared are not passed on (no loops)', !fake.callsSince(mark).some((c) => c.kind === 'ban' || c.kind === 'send'));
+    r = await cmd('bannetwork', { sub: 'status', user: IDS.admin });
+    check('/bannetwork status lists the members', /Our community/.test(JSON.stringify(r.calls)), r.text + errText(r));
+    r = await cmd('bannetwork', { sub: 'leave', user: IDS.admin });
+    check('/bannetwork leave', /Left/.test(r.text) && !(await prisma.banNetworkMember.findUnique({ where: { guildId: IDS.guild } })));
+    await prisma.banNetwork.deleteMany({});
+    takeLog();
+  }
+
   // ── report ──────────────────────────────────────────────────────────────
   const failed = results.filter((r) => !r.ok);
   out(`\n${results.length - failed.length}/${results.length} checks passed${failed.length ? `, ${failed.length} failed:` : '.'}`);
