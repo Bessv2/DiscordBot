@@ -43,7 +43,8 @@ export type ModuleId =
   | 'tempvoice'
   | 'addons'
   | 'bannetwork'
-  | 'aitriage';
+  | 'aitriage'
+  | 'plugins';
 
 export type ModuleGroup = 'Moderation' | 'Community' | 'Games & fun';
 
@@ -402,10 +403,27 @@ export const MODULES: ModuleDef[] = [
     toggle: { kind: 'flag', field: 'aiTriageEnabled' },
     defaultOn: false,
   },
+  {
+    id: 'plugins',
+    name: 'Plugins',
+    emoji: '🔌',
+    group: 'Community',
+    blurb: "Extra commands the bot's host added as plugins. Switch them all off here if you don't want them.",
+    commands: [], // filled in at startup by src/plugins/loader.ts
+    toggle: { kind: 'list' },
+    defaultOn: true,
+  },
 ];
 
 const BY_ID = new Map(MODULES.map((m) => [m.id, m]));
 const BY_COMMAND = new Map(MODULES.flatMap((m) => m.commands.map((c) => [c, m] as const)));
+
+/** Plugins add their commands at startup, so the plugins module's switch covers them. */
+export function registerModuleCommand(id: ModuleId, commandName: string): void {
+  const def = BY_ID.get(id)!;
+  if (!def.commands.includes(commandName)) def.commands.push(commandName);
+  BY_COMMAND.set(commandName, def);
+}
 
 export function getModule(id: ModuleId): ModuleDef {
   return BY_ID.get(id)!;

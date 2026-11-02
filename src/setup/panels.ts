@@ -1595,6 +1595,15 @@ const panels: Record<PanelId, Panel> = {
     },
   },
 
+  plugins: simplePanel(
+    'plugins',
+    '🔌 Plugins',
+    "Extra commands the bot's host added as plugins (files they installed on the computer running the bot). Turn this off to hide them all in this server.",
+    [
+      'Which plugins exist is up to whoever runs the bot (ENABLE_PLUGINS, docs/PLUGINS.md).',
+      'Their commands show up in `/help` while this is on.',
+    ],
+  ),
   bannetwork: simplePanel(
     'bannetwork',
     '🔗 Ban sharing',

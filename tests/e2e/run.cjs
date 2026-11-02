@@ -30,6 +30,13 @@ process.env.ENABLE_DASHBOARD = 'true';
 process.env.ADDONS_ALLOW_PRIVATE_NETWORK = 'true';
 // AI triage is driven with a stand-in classifier; this key is never used.
 process.env.AI_TRIAGE_API_KEY = 'test-key-not-used';
+// Plugins: the documented example, plus one broken file that must be skipped.
+// Inside the project, like ./plugins, so plugins can require discord.js.
+const PLUGIN_DIR = fs.mkdtempSync(path.join(ROOT, 'tests', 'e2e', '.plugins-'));
+fs.copyFileSync(path.join(ROOT, 'docs', 'plugins', 'dice-duel.js'), path.join(PLUGIN_DIR, 'dice-duel.js'));
+fs.writeFileSync(path.join(PLUGIN_DIR, 'broken.js'), "module.exports = { name: 'Broken Name', commands: 'nope' };");
+process.env.ENABLE_PLUGINS = 'true';
+process.env.PLUGINS_DIR = PLUGIN_DIR;
 process.env.LOG_LEVEL = 'info';
 // The command-sync hash lives in data/; point it away from the real one.
 const realHash = path.join(ROOT, 'data', '.commands-hash');
@@ -62,6 +69,8 @@ const { checkMusicTools } = require(`${ROOT}/dist/music/check`);
 
 const fake = new FakeDiscord();
 fake.install(client);
+require(`${ROOT}/dist/plugins/loader`).loadPlugins(client);
+const pluginLog = logBuf.join('\n');
 loadCommands(client);
 loadEvents(client);
 
@@ -1391,6 +1400,28 @@ async function emitMessage(raw) {
     takeLog();
   }
 
+  heading('Plugins');
+  {
+    const { loadedPlugins } = require(`${ROOT}/dist/plugins/loader`);
+    const log = pluginLog;
+    check('the example plugin loads, and a broken one is skipped with a reason', loadedPlugins().join() === 'dice-duel' && /Plugin broken\.js was skipped: "name"/.test(log), log.split('\n').filter((l) => /lugin/.test(l)).join(' | '));
+    let r = await cmd('duel', { user: IDS.user, options: [opt.user('opponent', IDS.user2)] });
+    check("a plugin's command works like a built-in one", /rolled \*\*\d\*\*/.test(r.text), r.text + errText(r));
+    let mark = fake.calls.length;
+    await emitMessage(userMessage(IDS.user, 'good game all', IDS.welcome));
+    await fake.settle();
+    check("a plugin's message hook runs", fake.callsSince(mark).some((c) => c.kind === 'send' && /gg/.test(JSON.stringify(c.body))));
+    await setModuleOn(IDS.guild, 'plugins', false);
+    r = await cmd('duel', { user: IDS.user, options: [opt.user('opponent', IDS.user2)] });
+    check('with Plugins switched off in a server, its commands say so', /off/i.test(r.text) && !/rolled/.test(r.text), r.text);
+    mark = fake.calls.length;
+    await emitMessage(userMessage(IDS.user, 'good game again', IDS.welcome));
+    await fake.settle();
+    check('...and its message hook stays quiet there', !fake.callsSince(mark).some((c) => c.kind === 'send' && /gg/.test(JSON.stringify(c.body))));
+    await setModuleOn(IDS.guild, 'plugins', true);
+    takeLog();
+  }
+
   // ── report ──────────────────────────────────────────────────────────────
   const failed = results.filter((r) => !r.ok);
   out(`\n${results.length - failed.length}/${results.length} checks passed${failed.length ? `, ${failed.length} failed:` : '.'}`);
@@ -1398,6 +1429,7 @@ async function emitMessage(raw) {
   const unhandled = fake.calls.filter((c) => c.kind === 'UNHANDLED');
   if (unhandled.length) out(`\n(fake Discord had no answer for: ${[...new Set(unhandled.map((c) => `${c.method} ${c.route}`))].join(', ')})`);
   fs.writeFileSync(path.join(HERE, `results${MUSIC ? '-music' : ''}.json`), JSON.stringify(results, null, 2));
+  fs.rmSync(PLUGIN_DIR, { recursive: true, force: true });
   if (hashBackup) fs.writeFileSync(realHash, hashBackup);
   else fs.rmSync(realHash, { force: true });
   await prisma.$disconnect();

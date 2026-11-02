@@ -13,6 +13,9 @@ services:
     volumes:
       # The SQLite database lives here so it survives updates and rebuilds.
       - ./data:/app/data
+      # Optional plugins (ENABLE_PLUGINS=true): .js files you add here.
+      # Read-only, so a plugin can't change itself or the others.
+      - ./plugins:/app/plugins:ro
     ports:
       # The optional web dashboard (ENABLE_DASHBOARD=true). Reachable only
       # from this computer (127.0.0.1); see README → "Web dashboard" for

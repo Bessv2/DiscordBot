@@ -101,6 +101,15 @@ const envSchema = z.object({
   AI_TRIAGE_MODEL: blankIsUnset(z.string().trim().min(1).default('claude-opus-5-5')),
   AI_TRIAGE_MAX_PER_MINUTE: blankIsUnset(z.coerce.number().int().min(1).max(600).default(20)),
 
+  // Plugins: your own commands as .js files in the plugins folder. A plugin
+  // runs with the bot's full access, so it's off unless you turn it on and
+  // only loads files you put there. See docs/PLUGINS.md.
+  ENABLE_PLUGINS: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
+  PLUGINS_DIR: blankIsUnset(z.string().trim().min(1).optional()),
+
   // Optional integrations below — every one of them fails closed (feature
   // just doesn't run, logged once) rather than crashing when unset.
   TWITCH_CLIENT_ID: z.string().optional(),
