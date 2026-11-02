@@ -20,16 +20,20 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "postinstall": "prisma generate",
-    "test:e2e": "node tests/e2e/run.cjs"
+    "test:e2e": "node tests/e2e/run.cjs",
+    "backup": "node dist/scripts/backup.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
     "@prisma/client": "^5.20.0",
     "discord.js": "^14.16.3",
     "dotenv": "^16.4.5",
     "express": "^5.3.0",
+    "fast-xml-parser": "^5.11.2",
     "gamedig": "^5.3.3",
     "prisma": "^5.20.0",
-    "zod": "^3.23.8"
+    "undici": "^6.29.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
@@ -41,7 +45,7 @@
     "prettier": "^3.3.3",
     "tsx": "^4.19.1",
     "typescript": "^5.6.2",
-    "vitest": "^2.1.1"
+    "vitest": "^4.1.12"
   },
   "engines": {
     "node": ">=22.12.0"

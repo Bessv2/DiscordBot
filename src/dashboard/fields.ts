@@ -139,6 +139,12 @@ export const PAGES: FeaturePage[] = [
         label: 'Banned words or phrases',
         help: 'One per line.',
       },
+      {
+        kind: 'bool',
+        key: 'nativeAutomod',
+        label: "Use Discord's AutoMod for the invite, word and mention filters",
+        help: 'Discord blocks those messages before anyone sees them, and it works without Message Content. Needs the bot to have Manage Server. Flood detection stays with the bot.',
+      },
       ...keepText,
     ],
   },
@@ -370,6 +376,14 @@ export const PAGES: FeaturePage[] = [
     why: '/jam watch parties and the /music player (if the host enabled it).',
     moduleId: 'music',
     fields: [{ kind: 'role', key: 'musicDjRoleId', label: 'DJ role (optional)' }],
+  },
+  {
+    id: 'aitriage',
+    title: 'AI triage',
+    emoji: '🔎',
+    why: "An AI sends messages that look harmful to a review channel with Delete and Looks fine buttons. It never acts by itself. Message text goes to Anthropic's API using the bot host's key.",
+    moduleId: 'aitriage',
+    fields: [{ kind: 'channel', key: 'aiTriageChannelId', label: 'Review channel (empty = the mod-log)', channelKind: 'text' }],
   },
 ];
 

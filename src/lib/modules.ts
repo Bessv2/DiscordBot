@@ -40,7 +40,11 @@ export type ModuleId =
   | 'joinroles'
   | 'autoresponders'
   | 'announcements'
-  | 'tempvoice';
+  | 'tempvoice'
+  | 'addons'
+  | 'bannetwork'
+  | 'aitriage'
+  | 'plugins';
 
 export type ModuleGroup = 'Moderation' | 'Community' | 'Games & fun';
 
@@ -50,7 +54,8 @@ export type FlagField =
   | 'welcomeEnabled'
   | 'xpEnabled'
   | 'economyEnabled'
-  | 'prefixCommandsOn';
+  | 'prefixCommandsOn'
+  | 'aiTriageEnabled';
 
 export interface ModuleDef {
   id: ModuleId;
@@ -368,10 +373,57 @@ export const MODULES: ModuleDef[] = [
     toggle: { kind: 'list' },
     defaultOn: true,
   },
+  {
+    id: 'addons',
+    name: 'Add-ons',
+    emoji: '🧩',
+    group: 'Community',
+    blurb: 'Post from other places: news feeds, Steam game news, Epic free games, game servers going up or down, and other apps via webhooks.',
+    commands: ['addons'],
+    toggle: { kind: 'list' },
+    defaultOn: true,
+  },
+  {
+    id: 'bannetwork',
+    name: 'Ban sharing',
+    emoji: '🔗',
+    group: 'Moderation',
+    blurb: 'Share bans with other servers you trust that use this same bot: an alert with a "Ban here too" button, or an automatic ban.',
+    commands: ['bannetwork'],
+    toggle: { kind: 'list' },
+    defaultOn: true,
+  },
+  {
+    id: 'aitriage',
+    name: 'AI triage',
+    emoji: '🔎',
+    group: 'Moderation',
+    blurb: 'Optional: an AI flags likely-harmful messages for a moderator to review. It never acts on its own.',
+    commands: [],
+    toggle: { kind: 'flag', field: 'aiTriageEnabled' },
+    defaultOn: false,
+  },
+  {
+    id: 'plugins',
+    name: 'Plugins',
+    emoji: '🔌',
+    group: 'Community',
+    blurb: "Extra commands the bot's host added as plugins. Switch them all off here if you don't want them.",
+    commands: [], // filled in at startup by src/plugins/loader.ts
+    toggle: { kind: 'list' },
+    defaultOn: true,
+  },
 ];
 
 const BY_ID = new Map(MODULES.map((m) => [m.id, m]));
 const BY_COMMAND = new Map(MODULES.flatMap((m) => m.commands.map((c) => [c, m] as const)));
+
+/** Plugins add their commands at startup, so the plugins module's switch covers them. */
+export function registerModuleCommand(id: ModuleId, commandName: string): void {
+  const def = BY_ID.get(id)!;
+  if (!def.commands.includes(commandName)) def.commands.push(commandName);
+  BY_COMMAND.set(commandName, def);
+}
 
 export function getModule(id: ModuleId): ModuleDef {
   return BY_ID.get(id)!;

@@ -68,7 +68,12 @@ Then try:
 - `/poll question:"pizza or tacos?" options:"pizza, tacos"`
 - `/config view` to see current settings, and `/config modlog`, `/config automod`, `/config permissions` to change them without re-running `/setup`
 - If `ENABLE_DASHBOARD=true` (and `DASHBOARD_PORT=3000` with Docker): run `/dashboard`, open the link on the computer running the bot, switch a feature off there, and check its command now says it's off in Discord. Run `/dashboard` as a member without Manage Server and check it refuses.
-- If `ENABLE_MESSAGE_CONTENT=true`: post a `discord.gg/...` link or spam a bunch of messages quickly and see auto-mod catch it
+- `/addons add type:Steam game news channel:#test target:730`, then `/addons list` (it should say ✅ working). `/addons add type:Epic free games channel:#test` posts what's free right now.
+- `/setup` → Auto-mod → **Use Discord's AutoMod** (give the bot's role Manage Server first), then check Server Settings → AutoMod shows rules named "Bot: ...".
+- `/exportcases` and open the file in a spreadsheet.
+- With two test servers: `/bannetwork create` in one, `/bannetwork join` in the other, then ban an alt in the first and check the second's mod-log.
+- If `AI_TRIAGE_API_KEY` is set: `/setup` → AI triage → turn it on, then post something rude from an alt account and check the review channel.
+- - If `ENABLE_MESSAGE_CONTENT=true`: post a `discord.gg/...` link or spam a bunch of messages quickly and see auto-mod catch it
 
 ## What to report back
 

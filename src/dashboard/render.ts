@@ -48,7 +48,7 @@ export interface Shell {
 export function layout(title: string, body: string, shell?: Shell): string {
   const header = shell
     ? `<header>${shell.guildIconUrl ? `<img src="${esc(shell.guildIconUrl)}" alt="">` : ''}<span class="name">${esc(shell.guildName)}</span>
-<nav><a href="/">Features</a><a href="/cases">Cases</a>
+<nav><a href="/">Features</a><a href="/addons">Add-ons</a><a href="/lists">Lists</a><a href="/cases">Cases</a>
 <form class="inline" method="post" action="/logout"><input type="hidden" name="csrf" value="${esc(shell.csrf)}"><button>Sign out</button></form></nav></header>`
     : '';
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -90,7 +90,7 @@ export function overviewPage(
               ? ''
               : `<form class="inline" method="post" action="/toggle/${esc(s.id)}"><input type="hidden" name="csrf" value="${esc(shell.csrf)}"><button class="${on ? 'on' : 'off'}">${on ? 'Turn off' : 'Turn on'}</button></form>`;
           const settings = pages.has(s.id)
-            ? `<a class="btn" href="/f/${esc(s.id)}">Settings</a>`
+            ? `<a class="btn" href="${s.id === 'addons' ? '/addons' : `/f/${esc(s.id)}`}">Settings</a>`
             : '';
           // Details can contain Discord mention markup like <#123>; show names instead.
           const detail = s.detail.replace(/<(#|@&)(\d+)>/g, (_m, kind: '#' | '@&', id: string) =>
@@ -219,6 +219,7 @@ export function casesPage(shell: Shell, cases: CaseRow[], query: string): string
     )
     .join('');
   const body = `<h1>Case history</h1>
+<p class="muted">Download the whole history: <a href="/cases/export.csv">spreadsheet (CSV)</a> · <a href="/cases/export.json">JSON</a>. In Discord: <code>/exportcases</code>.</p>
 <form class="card" method="get" action="/cases"><label for="q">Find a member (name or ID)</label><input id="q" type="text" name="q" value="${esc(query)}" maxlength="100"><div class="actions"><button class="primary">Search</button><a class="btn" href="/cases">Clear</a></div></form>
 <div class="card">${cases.length ? `<table><tr><th>Case</th><th>Action</th><th>Member</th><th class="hide-sm">Moderator</th><th>Reason</th><th class="hide-sm">When (UTC)</th></tr>${rows}</table>` : '<p class="muted">No cases found.</p>'}</div>`;
   return layout('Cases', body, shell);

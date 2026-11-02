@@ -2,7 +2,22 @@
 
 Everything the bot knows — settings, case history, reminders, polls — lives in one SQLite file at `./data/bot.db` (or wherever `DATABASE_URL` in your `.env` points).
 
-## One-command backup
+## Automatic daily backups
+
+The bot makes one backup a day by itself, while it runs, into `data/backups/` (next to `bot.db`), and keeps the newest 7. Change how many with `BACKUP_KEEP` in `.env`, or set it to `0` to turn this off. Copies are made with SQLite's `VACUUM INTO`, which gives a consistent snapshot even while the bot is writing.
+
+## Backup on demand (any computer, including Windows)
+
+```bash
+docker compose exec bot npm run backup     # with Docker
+npm run backup                              # without Docker
+```
+
+It prints where it saved the copy (`data/backups/bot-YYYYMMDD-HHMMSS.db`).
+
+Keep a copy somewhere other than the bot's computer too (another disk, cloud storage): a backup on the same disk doesn't help if that disk dies.
+
+## One-command backup (Mac/Linux script)
 
 ```bash
 ./scripts/backup-db.sh

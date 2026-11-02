@@ -80,6 +80,36 @@ const envSchema = z.object({
       .transform((v) => v?.replace(/\/+$/, '')),
   ),
 
+  // Add-ons (RSS feeds) normally refuse private and local addresses, so a
+  // server admin can't use the bot to reach the host's own network. Turn on
+  // only if every admin of every server the bot is in is trusted, e.g. to
+  // read a feed from a reader on your own network.
+  ADDONS_ALLOW_PRIVATE_NETWORK: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
+
+  // Daily database backups kept in a backups/ folder next to the database
+  // (./data/backups with Docker). 0 turns them off.
+  BACKUP_KEEP: blankIsUnset(z.coerce.number().int().min(0).max(365).default(7)),
+
+  // Optional AI triage (off unless set): flags likely-harmful messages for
+  // a moderator to review; never acts on its own. Uses YOUR Anthropic API
+  // key, and sends message text to Anthropic's API for servers that turn it
+  // on, so only set it if that's acceptable for your communities.
+  AI_TRIAGE_API_KEY: blankIsUnset(z.string().trim().min(1).optional()),
+  AI_TRIAGE_MODEL: blankIsUnset(z.string().trim().min(1).default('claude-opus-5-5')),
+  AI_TRIAGE_MAX_PER_MINUTE: blankIsUnset(z.coerce.number().int().min(1).max(600).default(20)),
+
+  // Plugins: your own commands as .js files in the plugins folder. A plugin
+  // runs with the bot's full access, so it's off unless you turn it on and
+  // only loads files you put there. See docs/PLUGINS.md.
+  ENABLE_PLUGINS: z
+    .string()
+    .optional()
+    .transform((v) => v === 'true'),
+  PLUGINS_DIR: blankIsUnset(z.string().trim().min(1).optional()),
+
   // Optional integrations below — every one of them fails closed (feature
   // just doesn't run, logged once) rather than crashing when unset.
   TWITCH_CLIENT_ID: z.string().optional(),

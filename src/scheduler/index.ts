@@ -8,6 +8,9 @@ import { sweepSpamLog } from '../automod/spam';
 import { checkGiveaways } from '../features/giveaways';
 import { checkAnnouncements } from '../features/announcements';
 import { pruneExpiredContent } from '../lib/contentRetention';
+import { checkAddons } from '../addons/runner';
+import { reconcileNativeAutomod } from '../automod/native';
+import { dailyBackup } from '../lib/backup';
 
 const FAST_INTERVAL_MS = 15_000; // reminders, mute expiry — cheap, time-sensitive
 const SLOW_INTERVAL_MS = 5 * 60_000; // birthdays, stream polling — coarser, rate-limit-conscious
@@ -61,4 +64,7 @@ async function runSlowTick(client: Client<true>): Promise<void> {
   await checkBirthdays(client);
   await checkStreamNotifications(client);
   await pruneExpiredContent(client);
+  await checkAddons(client);
+  await reconcileNativeAutomod(client.guilds.cache);
+  await dailyBackup();
 }

@@ -32,6 +32,17 @@ model GuildConfig {
   // Retention for anything logged from raw message content (auto-mod hits).
   // 0 = don't store message content at all, only metadata.
   logMessageContent Boolean @default(false)
+  // Use Discord's own AutoMod for the invite, word and mention filters, so
+  // they work without the Message Content intent. nativeAutomodState is
+  // JSON: the IDs of the rules the bot made, a hash of what they say, and
+  // the last sync error.
+  nativeAutomod      Boolean @default(false)
+  nativeAutomodState String  @default("{}")
+  // Optional AI triage: flags likely-harmful messages for a human to review
+  // in aiTriageChannelId. Never acts by itself. Also needs the host's
+  // AI_TRIAGE_* settings and Message Content.
+  aiTriageEnabled   Boolean @default(false)
+  aiTriageChannelId String?
   contentRetainDays Int     @default(30)
 
   // Legacy prefix commands, opt-in per guild on top of the global env flag.
@@ -148,6 +159,8 @@ model GuildConfig {
   autoResponders         AutoResponder[]
   tempVoiceChannels      TempVoiceChannel[]
   scheduledMessages      ScheduledMessage[]
+  addons                 Addon[]
+  banNetworkMember       BanNetworkMember?
 
   @@map("guild_configs")
 }
@@ -623,4 +636,55 @@ model ScheduledMessage {
 
   @@index([nextRunAt])
   @@map("scheduled_messages")
+}
+
+// Add-ons: outside sources the bot posts from (RSS/Atom feeds, Steam news,
+// Epic free games, game-server up/down, and incoming webhooks).
+model Addon {
+  id            Int       @id @default(autoincrement())
+  guildId       String
+  kind          String // rss | steam_news | epic_free | server_watch | webhook
+  name          String
+  channelId     String
+  target        String    @default("") // feed URL, Steam app ID, or "game|host|port"
+  mentionRoleId String?
+  secretHash    String? // webhook only: sha256 of the secret in its URL
+  enabled       Boolean   @default(true)
+  state         String    @default("{}") // JSON: seen item IDs, last server status
+  lastCheckedAt DateTime?
+  lastError     String?
+  createdBy     String
+  createdAt     DateTime  @default(now())
+
+  guild GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId])
+  @@map("addons")
+}
+
+// Ban sharing between servers that run on this same bot. Joining needs the
+// network's code (stored hashed) and admin rights in the joining server.
+model BanNetwork {
+  id           Int      @id @default(autoincrement())
+  name         String
+  joinCodeHash String   @unique
+  ownerGuildId String
+  createdAt    DateTime @default(now())
+
+  members BanNetworkMember[]
+
+  @@map("ban_networks")
+}
+
+model BanNetworkMember {
+  guildId   String   @id // a server is in at most one network
+  networkId Int
+  mode      String   @default("alert") // alert | ban
+  joinedAt  DateTime @default(now())
+
+  network BanNetwork  @relation(fields: [networkId], references: [id], onDelete: Cascade)
+  guild   GuildConfig @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([networkId])
+  @@map("ban_network_members")
 }

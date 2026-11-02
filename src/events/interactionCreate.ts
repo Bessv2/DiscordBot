@@ -10,6 +10,8 @@ import { TICKET_PANEL_BUTTON, closeTicket, openTicket } from '../features/ticket
 import { toggleEntry } from '../features/giveaways';
 import { vote } from '../features/suggestions';
 import { VERIFY_BUTTON, verify } from '../features/joinRoles';
+import { handleNetworkBanButton } from '../features/banNetwork';
+import { handleTriageButton } from '../features/aiTriage';
 
 // Buttons on messages the bot posted for a feature. Each handler checks its
 // own module switch, since buttons outlive the command that posted them.
@@ -18,6 +20,8 @@ const BUTTONS: {
   run: (i: ButtonInteraction<'cached'>) => Promise<unknown>;
 }[] = [
   { match: (id) => id === TICKET_PANEL_BUTTON, run: (i) => openTicket(i) },
+  { match: (id) => id.startsWith('bannet_ban:'), run: (i) => handleNetworkBanButton(i) },
+  { match: (id) => id === 'triage_ok' || id.startsWith('triage_del:'), run: (i) => handleTriageButton(i) },
   {
     match: (id) => id.startsWith('ticket_close:'),
     run: async (i) =>

@@ -7,11 +7,15 @@ import { prisma } from './lib/db';
 import { logger } from './lib/logger';
 import { checkMusicTools } from './music/check';
 import { stopAllMusic } from './commands/fun/music';
+import { loadPlugins, pluginsReady } from './plugins/loader';
 
 async function main() {
   await runStartupHealthCheck();
   checkMusicTools();
 
+  // Plugins first, so their commands are registered with Discord too.
+  loadPlugins(client);
+  client.once('ready', () => void pluginsReady());
   loadCommands(client);
   loadEvents(client);
 

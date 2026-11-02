@@ -16,3 +16,4 @@ backups/
 
 *.log
 .DS_Store
+tests/e2e/.plugins-*/

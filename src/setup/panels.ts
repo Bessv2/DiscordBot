@@ -22,6 +22,7 @@ import {
 } from 'discord.js';
 import type { GuildConfig } from '@prisma/client';
 import { config } from '../config';
+import { parseNativeState, syncNativeAutomod } from '../automod/native';
 import { prisma } from '../lib/db';
 import { checkRoleAssignable } from '../lib/moderationGuard';
 import { getModule, isModuleOn, ModuleId, setModuleOn } from '../lib/modules';
@@ -375,10 +376,19 @@ const panels: Record<PanelId, Panel> = {
           inline: true,
         },
       );
-      if (!config.ENABLE_MESSAGE_CONTENT) {
+      const native = parseNativeState(gc.nativeAutomodState);
+      embed.addFields({
+        name: "Discord's AutoMod",
+        value: gc.nativeAutomod
+          ? native.error
+            ? `⚠️ ${native.error}`
+            : `On: Discord itself blocks invite links, banned words and mention spam before anyone sees them (rules named "Bot: ..." in Server Settings → AutoMod). Flood detection stays with the bot.`
+          : 'Off. Turn it on to have Discord run the invite, word and mention filters: they then work without Message Content, and block messages instead of deleting them afterwards. Needs the bot to have **Manage Server**.',
+      });
+      if (!config.ENABLE_MESSAGE_CONTENT && !(gc.nativeAutomod && !native.error)) {
         embed.addFields(
           hostNote(
-            'Flood detection works now. The invite filter, word filter and mention-spam check need **Message Content** turned on (ENABLE_MESSAGE_CONTENT) by whoever runs the bot.',
+            "Flood detection works now. The invite filter, word filter and mention-spam check need **Message Content** turned on (ENABLE_MESSAGE_CONTENT) by whoever runs the bot, or Discord's AutoMod (button below).",
           ),
         );
       }
@@ -394,6 +404,7 @@ const panels: Record<PanelId, Panel> = {
               gc.inviteFilterOn ? 'Invite filter: on' : 'Invite filter: off',
             ),
             button('automod', 'words', 'Banned words…'),
+            button('automod', 'native', gc.nativeAutomod ? "Discord AutoMod: on" : "Use Discord's AutoMod"),
           ),
           row(...textRetentionButtons('automod', gc)),
         ],
@@ -406,6 +417,17 @@ const panels: Record<PanelId, Panel> = {
       if (action === 'toggle') {
         await update(ctx, { automodEnabled: !gc.automodEnabled });
         return { notice: `Auto-mod is now **${ctx.gc.automodEnabled ? 'on' : 'off'}**.` };
+      }
+      if (action === 'native') {
+        await update(ctx, { nativeAutomod: !gc.nativeAutomod });
+        const err = await syncNativeAutomod(ctx.guild, true);
+        ctx.gc = await prisma.guildConfig.findUniqueOrThrow({ where: { id: ctx.guild.id } });
+        if (err) return { notice: `⚠️ ${err}` };
+        return {
+          notice: ctx.gc.nativeAutomod
+            ? "Discord's AutoMod now runs the invite, word and mention filters."
+            : "Discord's AutoMod rules removed; the bot's own filters are back in charge.",
+        };
       }
       if (action === 'invite') {
         await update(ctx, { inviteFilterOn: !gc.inviteFilterOn });
@@ -1542,6 +1564,68 @@ const panels: Record<PanelId, Panel> = {
         ? null
         : 'This needs **Message Content** (ENABLE_MESSAGE_CONTENT) to read messages.',
   ),
+  aitriage: {
+    async render(ctx) {
+      const gc = ctx.gc;
+      const on = gc.aiTriageEnabled;
+      const embed = baseEmbed(
+        ctx,
+        '🔎 AI triage',
+        "An AI reads new messages and sends the ones that look harmful (harassment, hate, threats, scams, self-harm) to a review channel with **Delete** and **Looks fine** buttons. It never deletes, warns or bans by itself: a moderator always decides. Moderators' own messages aren't checked.\n\n" +
+          "Message text is sent to Anthropic's API (Claude) using the bot host's own key. Tell your members if you turn this on.",
+        on,
+      ).addFields({
+        name: 'Review channel',
+        value: gc.aiTriageChannelId ? `<#${gc.aiTriageChannelId}>` : gc.modLogChannelId ? `the mod-log (<#${gc.modLogChannelId}>)` : 'not set (pick one)',
+      });
+      if (!config.AI_TRIAGE_API_KEY || !config.ENABLE_MESSAGE_CONTENT)
+        embed.addFields(hostNote('This needs whoever runs the bot to set **AI_TRIAGE_API_KEY** and turn on **Message Content** (ENABLE_MESSAGE_CONTENT).'));
+      return {
+        embed,
+        rows: [channelPicker('aitriage', 'channel', 'Review channel', gc.aiTriageChannelId), row(toggleButton('aitriage', on))],
+      };
+    },
+    async handle(i, action, ctx) {
+      if (action === 'toggle') return { notice: await toggleModule(ctx, 'aitriage') };
+      if (action === 'channel' && i.isChannelSelectMenu()) {
+        await update(ctx, { aiTriageChannelId: i.values[0] });
+        return { notice: `Reviews go to <#${i.values[0]}>.` };
+      }
+      return {};
+    },
+  },
+
+  plugins: simplePanel(
+    'plugins',
+    '🔌 Plugins',
+    "Extra commands the bot's host added as plugins (files they installed on the computer running the bot). Turn this off to hide them all in this server.",
+    [
+      'Which plugins exist is up to whoever runs the bot (ENABLE_PLUGINS, docs/PLUGINS.md).',
+      'Their commands show up in `/help` while this is on.',
+    ],
+  ),
+  bannetwork: simplePanel(
+    'bannetwork',
+    '🔗 Ban sharing',
+    'If you run several servers (or partner with ones you trust) on this same bot, share bans between them: a ban in one shows up in the others, as a mod-log alert with a "Ban here too" button, or as an automatic ban.',
+    [
+      '`/bannetwork create name:...` in one server, which gives a join code',
+      '`/bannetwork join code:... mode:...` in the others',
+      '`/bannetwork status`, `/bannetwork mode` and `/bannetwork leave`',
+      'Alerts go to the mod-log channel, so pick one first.',
+    ],
+  ),
+  addons: simplePanel(
+    'addons',
+    '🧩 Add-ons',
+    'Have the bot post from other places: news feeds and patch notes, Steam game news, Epic free games, your game server going up or down, and messages from other apps (webhooks).',
+    [
+      '`/addons add type:Steam game news channel:#patch-notes target:730`',
+      '`/addons add type:RSS / Atom feed channel:#news target:https://...`',
+      '`/addons list`, `/addons test` and `/addons remove`',
+      'Or use the **Add-ons** page of the web dashboard (`/dashboard`).',
+    ],
+  ),
   announcements: simplePanel(
     'announcements',
     '📣 Announcements',
@@ -1609,5 +1693,12 @@ export async function handlePanel(
   action: string,
   ctx: PanelCtx,
 ): Promise<HandleResult> {
-  return (await panels[panelId].handle?.(i, action, ctx)) ?? {};
+  const result = (await panels[panelId].handle?.(i, action, ctx)) ?? {};
+  // Auto-mod settings and moderator roles feed Discord's AutoMod rules
+  // (exempt roles); keep them in step. A no-op unless something changed.
+  if (panelId === 'automod' || panelId === 'permissions') {
+    await syncNativeAutomod(ctx.guild).catch(() => undefined);
+    ctx.gc = await prisma.guildConfig.findUniqueOrThrow({ where: { id: ctx.guild.id } });
+  }
+  return result;
 }

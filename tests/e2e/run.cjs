@@ -26,6 +26,17 @@ process.env.ENABLE_PRESENCE = 'false';
 process.env.ENABLE_PREFIX_COMMANDS = 'true';
 process.env.ENABLE_MUSIC = MUSIC ? 'true' : 'false';
 process.env.ENABLE_DASHBOARD = 'true';
+// The test feed is served from this machine, which add-ons normally refuse.
+process.env.ADDONS_ALLOW_PRIVATE_NETWORK = 'true';
+// AI triage is driven with a stand-in classifier; this key is never used.
+process.env.AI_TRIAGE_API_KEY = 'test-key-not-used';
+// Plugins: the documented example, plus one broken file that must be skipped.
+// Inside the project, like ./plugins, so plugins can require discord.js.
+const PLUGIN_DIR = fs.mkdtempSync(path.join(ROOT, 'tests', 'e2e', '.plugins-'));
+fs.copyFileSync(path.join(ROOT, 'docs', 'plugins', 'dice-duel.js'), path.join(PLUGIN_DIR, 'dice-duel.js'));
+fs.writeFileSync(path.join(PLUGIN_DIR, 'broken.js'), "module.exports = { name: 'Broken Name', commands: 'nope' };");
+process.env.ENABLE_PLUGINS = 'true';
+process.env.PLUGINS_DIR = PLUGIN_DIR;
 process.env.LOG_LEVEL = 'info';
 // The command-sync hash lives in data/; point it away from the real one.
 const realHash = path.join(ROOT, 'data', '.commands-hash');
@@ -58,6 +69,8 @@ const { checkMusicTools } = require(`${ROOT}/dist/music/check`);
 
 const fake = new FakeDiscord();
 fake.install(client);
+require(`${ROOT}/dist/plugins/loader`).loadPlugins(client);
+const pluginLog = logBuf.join('\n');
 loadCommands(client);
 loadEvents(client);
 
@@ -1112,6 +1125,303 @@ async function emitMessage(raw) {
     takeLog();
   }
 
+  heading('Add-ons (feeds, webhooks)');
+  {
+    const http = require('node:http');
+    const { createApp } = require(`${ROOT}/dist/dashboard/server`);
+    const { createLoginToken } = require(`${ROOT}/dist/dashboard/auth`);
+    const { checkAddons } = require(`${ROOT}/dist/addons/runner`);
+    let feedItems = [{ guid: 'old-1', title: 'Old patch' }];
+    const feedXml = () =>
+      `<?xml version="1.0"?><rss version="2.0"><channel><title>T</title>${feedItems.map((i) => `<item><guid>${i.guid}</guid><title>${i.title}</title><link>https://game.example/${i.guid}</link><description>Notes for ${i.title}</description></item>`).join('')}</channel></rss>`;
+    const feedSrv = http.createServer((req, res) => {
+      if (req.url === '/feed.xml') res.writeHead(200, { 'content-type': 'application/rss+xml' }).end(feedXml());
+      else res.writeHead(404).end();
+    });
+    await new Promise((res) => feedSrv.listen(0, '127.0.0.1', res));
+    const feedUrl = `http://127.0.0.1:${feedSrv.address().port}/feed.xml`;
+
+    let a = await cmd('addons', { sub: 'add', user: IDS.admin, options: [opt.str('type', 'rss'), opt.chan('channel', IDS.general), opt.str('target', feedUrl), opt.str('name', 'Patch notes')] });
+    const feedAddon = await prisma.addon.findFirst({ where: { kind: 'rss' } });
+    check('/addons add connects a feed without posting its history', feedAddon && /connected/.test(a.text) && !a.calls.some((c) => c.kind === 'send' && /Old patch/.test(JSON.stringify(c.body))), a.text + errText(a));
+    a = await cmd('addons', { sub: 'add', user: IDS.user, options: [opt.str('type', 'epic_free'), opt.chan('channel', IDS.general)] });
+    check('regular members cannot add add-ons', /permission/i.test(a.text));
+    a = await cmd('addons', { sub: 'add', user: IDS.admin, options: [opt.str('type', 'rss'), opt.chan('channel', IDS.general)] });
+    check('a feed without an address is refused', /needs a \*\*target\*\*/.test(a.text) && (await prisma.addon.count()) === 1, a.text);
+
+    feedItems = [{ guid: 'new-2', title: 'Patch 2.0' }, ...feedItems];
+    await prisma.addon.update({ where: { id: feedAddon.id }, data: { lastCheckedAt: new Date(Date.now() - 60 * 60_000) } });
+    let mark = fake.calls.length;
+    await checkAddons(client);
+    await fake.settle();
+    const posted = fake.callsSince(mark).filter((c) => c.kind === 'send');
+    check('a new feed item is posted once by the scheduler', posted.length === 1 && /Patch 2\.0/.test(JSON.stringify(posted[0].body)) && /game\.example\/new-2/.test(JSON.stringify(posted[0].body)), JSON.stringify(posted.map((p) => p.body)).slice(0, 300));
+    mark = fake.calls.length;
+    await prisma.addon.update({ where: { id: feedAddon.id }, data: { lastCheckedAt: new Date(Date.now() - 60 * 60_000) } });
+    await checkAddons(client);
+    await fake.settle();
+    check('...and not again on the next check', !fake.callsSince(mark).some((c) => c.kind === 'send'));
+
+    a = await cmd('addons', { sub: 'list', user: IDS.admin });
+    check('/addons list shows it working', /Patch notes/.test(JSON.stringify(a.calls)) && /working/.test(JSON.stringify(a.calls)), a.text + errText(a));
+
+    // Dashboard side, including the webhook receiver.
+    const srv = http.createServer(createApp(client));
+    await new Promise((res) => srv.listen(0, '127.0.0.1', res));
+    const base = `http://127.0.0.1:${srv.address().port}`;
+    const t = createLoginToken(IDS.admin, IDS.guild);
+    const cookie = ((await fetch(`${base}/login?t=${t}`, { redirect: 'manual' })).headers.get('set-cookie') || '').split(';')[0];
+    let html = await (await fetch(`${base}/addons`, { headers: { cookie } })).text();
+    const csrf = (html.match(/name="csrf" value="([^"]+)"/) || [])[1];
+    check('the dashboard lists add-ons and the API keys status', /Patch notes/.test(html) && /Connected APIs/.test(html) && /TWITCH_CLIENT_ID/.test(html));
+    const form = (f) => fetch(`${base}/addons`, { method: 'POST', redirect: 'manual', headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf, ...f }) });
+    let res = await form({ kind: 'webhook', channelId: IDS.general, name: 'Minecraft server', mentionRoleId: '' });
+    html = await res.text();
+    const hookUrl = (html.match(/value="(http:\/\/[^"]+\/hooks\/[^"]+)"/) || [])[1];
+    check('adding a webhook shows its private address once', res.status === 200 && hookUrl && (await prisma.addon.findFirst({ where: { kind: 'webhook' } })).secretHash && !html.includes('secretHash'));
+    res = await form({ kind: 'rss', channelId: '123', target: 'https://example.com/feed' });
+    check('the dashboard refuses a channel from elsewhere', res.status === 400 && /isn&#39;t on this server/.test(await res.text()));
+
+    const hookPath = hookUrl.replace(/^http:\/\/[^/]+/, '');
+    mark = fake.calls.length;
+    res = await fetch(base + hookPath, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ content: 'Server restarted @everyone', username: 'MC' }) });
+    await fake.settle();
+    const hookSend = fake.callsSince(mark).find((c) => c.kind === 'send');
+    check('a webhook message is posted, and never pings', res.status === 204 && hookSend && /Server restarted/.test(hookSend.body.content) && JSON.stringify(hookSend.body.allowed_mentions) === JSON.stringify({ parse: [], roles: [] }), `${res.status} ${JSON.stringify(hookSend?.body)}`);
+    res = await fetch(base + hookPath, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: 'Backup finished' });
+    check('plain-text webhook bodies work too', res.status === 204);
+    res = await fetch(base + hookPath.replace(/[^/]+$/, 'wrong-secret'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"content":"x"}' });
+    check('a wrong webhook secret is refused', res.status === 404);
+    res = await fetch(base + hookPath, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{nope' });
+    check('broken JSON gets a clear 400', res.status === 400 && /invalid JSON/.test(await res.text()));
+    await setModuleOn(IDS.guild, 'addons', false);
+    res = await fetch(base + hookPath, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"content":"x"}' });
+    check('with add-ons switched off, webhooks are refused', res.status === 403);
+    await setModuleOn(IDS.guild, 'addons', true);
+
+    const hookAddon = await prisma.addon.findFirst({ where: { kind: 'webhook' } });
+    res = await fetch(`${base}/addons/${hookAddon.id}/delete`, { method: 'POST', redirect: 'manual', headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf }) });
+    check('add-ons can be removed from the dashboard', res.status === 303 && (await prisma.addon.count({ where: { kind: 'webhook' } })) === 0);
+    a = await cmd('addons', { sub: 'remove', user: IDS.admin, options: [opt.int('id', feedAddon.id)] });
+    check('/addons remove', (await prisma.addon.count()) === 0, a.text);
+    await new Promise((r2) => srv.close(r2));
+    await new Promise((r2) => feedSrv.close(r2));
+    takeLog();
+  }
+
+  heading("Discord's AutoMod");
+  {
+    const { syncNativeAutomod } = require(`${ROOT}/dist/automod/native`);
+    const guild = client.guilds.cache.get(IDS.guild);
+    await prisma.guildConfig.update({ where: { id: IDS.guild }, data: { automodEnabled: true, inviteFilterOn: true, wordFilterOn: true, bannedWords: JSON.stringify(['frog']), nativeAutomod: true } });
+    let mark = fake.calls.length;
+    let err = await syncNativeAutomod(guild, true);
+    const made = fake.callsSince(mark).filter((c) => c.kind === 'automodCreate');
+    check('turning it on creates the invite, word and mention rules', !err && made.length === 3 && made.some((c) => c.body.trigger_metadata?.keyword_filter?.[0] === 'frog') && made.some((c) => c.body.trigger_type === 5), `${err} ${made.map((c) => c.body.name)}`);
+    mark = fake.calls.length;
+    err = await syncNativeAutomod(guild);
+    check('syncing again with nothing changed makes no API calls', !err && fake.callsSince(mark).filter((c) => /automod/.test(c.kind)).length === 0);
+    await prisma.guildConfig.update({ where: { id: IDS.guild }, data: { bannedWords: JSON.stringify(['frog', 'toad']) } });
+    mark = fake.calls.length;
+    await syncNativeAutomod(guild);
+    const edits = fake.callsSince(mark).filter((c) => c.kind === 'automodEdit');
+    check('changing the word list edits the existing rule', edits.length === 3 && [...fake.automodRules.values()].some((r) => (r.trigger_metadata?.keyword_filter || []).includes('toad')));
+    const before = fake.calls.length;
+    const msg = userMessage(IDS.user, 'join discord.gg/abcdef now');
+    await emitMessage(msg);
+    await fake.settle();
+    check('the bot no longer deletes what Discord already blocks', !fake.callsSince(before).some((c) => c.kind === 'delete'));
+    const wordsRule = [...fake.automodRules.values()].find((r) => r.name === 'Bot: banned words');
+    fake.automodRules.delete(wordsRule.id);
+    await prisma.guildConfig.update({ where: { id: IDS.guild }, data: { mentionSpamLimit: 7 } });
+    mark = fake.calls.length;
+    await syncNativeAutomod(guild);
+    check('a rule deleted by hand in Server Settings is made again', fake.callsSince(mark).some((c) => c.kind === 'automodCreate' && c.body.name === 'Bot: banned words'));
+    await prisma.guildConfig.update({ where: { id: IDS.guild }, data: { nativeAutomod: false } });
+    mark = fake.calls.length;
+    await syncNativeAutomod(guild);
+    check('turning it off removes the bot\'s rules', fake.callsSince(mark).filter((c) => c.kind === 'automodDelete').length === 3 && fake.automodRules.size === 0);
+    const before2 = fake.calls.length;
+    await emitMessage(userMessage(IDS.user, 'join discord.gg/abcdef now'));
+    await fake.settle();
+    check('...and the bot\'s own invite filter takes over again', fake.callsSince(before2).some((c) => c.kind === 'delete'));
+    await prisma.guildConfig.update({ where: { id: IDS.guild }, data: { automodEnabled: false, inviteFilterOn: false, wordFilterOn: false, bannedWords: '[]', mentionSpamLimit: 5 } });
+    takeLog();
+  }
+
+  heading('Exports, lists and backups');
+  {
+    const http = require('node:http');
+    const { createApp } = require(`${ROOT}/dist/dashboard/server`);
+    const { createLoginToken } = require(`${ROOT}/dist/dashboard/auth`);
+    const { backupDatabase, sqliteFile, backupDir } = require(`${ROOT}/dist/lib/backup`);
+
+    let r = await cmd('exportcases', { user: IDS.mod, options: [opt.str('format', 'csv')] });
+    const sent = JSON.stringify(r.calls);
+    check('/exportcases sends the case history as a file, only to the moderator', /cases-.*\.csv/.test(sent) && /"flags":64/.test(sent), r.text + errText(r));
+    r = await cmd('exportcases', { user: IDS.user });
+    check('regular members cannot export cases', /permission/i.test(r.text));
+
+    await prisma.guildConfig.update({ where: { id: IDS.guild }, data: { modLogChannelId: IDS.modlog } });
+    const srv = http.createServer(createApp(client));
+    await new Promise((res) => srv.listen(0, '127.0.0.1', res));
+    const base = `http://127.0.0.1:${srv.address().port}`;
+    const t = createLoginToken(IDS.admin, IDS.guild);
+    const cookie = ((await fetch(`${base}/login?t=${t}`, { redirect: 'manual' })).headers.get('set-cookie') || '').split(';')[0];
+    let res = await fetch(`${base}/cases/export.csv`, { headers: { cookie } });
+    const csv = await res.text();
+    const total = await prisma.case.count({ where: { guildId: IDS.guild } });
+    check('the dashboard downloads every case as CSV', res.status === 200 && /attachment; filename="cases-/.test(res.headers.get('content-disposition') || '') && csv.trim().split('\r\n').length === total + 1, `${res.status} rows=${csv.trim().split('\r\n').length} cases=${total}`);
+    res = await fetch(`${base}/cases/export.json`, { headers: { cookie } });
+    check('...and as JSON', res.status === 200 && JSON.parse(await res.text()).count === total);
+    check('exports need a signed-in admin', (await fetch(`${base}/cases/export.csv`)).status === 401);
+
+    let html = await (await fetch(`${base}/lists`, { headers: { cookie } })).text();
+    const csrf = (html.match(/name="csrf" value="([^"]+)"/) || [])[1];
+    const post = (path, f) => fetch(base + path, { method: 'POST', redirect: 'manual', headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ csrf, ...f }) });
+    let mark = fake.calls.length;
+    res = await post('/lists/responders', { trigger: 'Server IP', matchType: 'contains', response: 'It is play.example.com' });
+    await fake.settle();
+    check('an auto-response added on the dashboard is saved', res.status === 303 && (await prisma.autoResponder.findFirst({ where: { trigger: 'server ip' } })));
+    check('...and the change is posted to the mod-log', fake.callsSince(mark).some((c) => c.kind === 'send' && c.route.includes(IDS.modlog) && /web dashboard/.test(JSON.stringify(c.body))));
+    const before = fake.calls.length;
+    await emitMessage(userMessage(IDS.user, 'what is the server ip?', IDS.welcome));
+    await fake.settle();
+    check('...and the bot answers with it straight away', fake.callsSince(before).some((c) => c.kind === 'send' && /play\.example\.com/.test(JSON.stringify(c.body))));
+    res = await post('/lists/tags', { name: 'rules', content: 'Be nice.' });
+    check('tags can be added from the dashboard', res.status === 303 && (await prisma.tag.findFirst({ where: { name: 'rules' } }))?.content === 'Be nice.');
+    res = await post('/lists/tags', { name: 'two words', content: 'x' });
+    check('a bad tag name is refused', res.status === 400);
+    res = await post('/lists/rewards', { level: '5', roleId: IDS.rHigh });
+    check('a level reward above your own role is refused', res.status === 400 && /above/.test(await res.text()));
+    res = await post('/lists/rewards', { level: '5', roleId: IDS.rReward });
+    check('a level reward can be added', res.status === 303 && (await prisma.levelRoleReward.findFirst({ where: { level: 5 } }))?.roleId === IDS.rReward);
+    const tag = await prisma.tag.findFirst({ where: { name: 'rules' } });
+    res = await post(`/lists/tags/${tag.id}/delete`, {});
+    check('list items can be removed', res.status === 303 && !(await prisma.tag.findFirst({ where: { name: 'rules' } })));
+    res = await post('/lists/tags/999999/delete', {});
+    check('removing something from another server (or nothing) is refused', res.status === 404);
+    await new Promise((r2) => srv.close(r2));
+
+    const dest = await backupDatabase(3);
+    check('a backup is a copy of the live database, made while it runs', require('node:fs').statSync(dest).size > 0 && dest.startsWith(backupDir(sqliteFile())));
+    require('node:fs').rmSync(backupDir(sqliteFile()), { recursive: true, force: true });
+    takeLog();
+  }
+
+  heading('Ban sharing');
+  {
+    const { onBanForNetwork } = require(`${ROOT}/dist/features/banNetwork`);
+    let r = await cmd('bannetwork', { sub: 'create', user: IDS.admin, options: [opt.str('name', 'Our community')] });
+    const code = (r.text.match(/`(ban-[^`]+)`/) || [])[1];
+    check('/bannetwork create gives a one-time join code', code && (await prisma.banNetwork.count()) === 1 && !(await prisma.banNetwork.findFirst()).joinCodeHash.includes(code), r.text);
+    r = await cmd('bannetwork', { sub: 'join', user: IDS.admin, options: [opt.str('code', code)] });
+    check("a server can't join twice", /already in a ban network/.test(r.text));
+    r = await cmd('bannetwork', { sub: 'create', user: IDS.user, options: [opt.str('name', 'x')] });
+    check('regular members cannot manage ban sharing', /permission/i.test(r.text));
+
+    // A partner server on the same bot (outside the simulated one) joins, then bans someone.
+    await prisma.guildConfig.upsert({ where: { id: 'G2' }, update: {}, create: { id: 'G2' } });
+    const net = await prisma.banNetwork.findFirst();
+    await prisma.banNetworkMember.create({ data: { guildId: 'G2', networkId: net.id, mode: 'alert' } });
+    const partner = { id: 'G2', name: 'Partner Server', client, bans: { fetch: async () => null } };
+    let mark = fake.calls.length;
+    await onBanForNetwork({ guild: partner, user: client.users.cache.get(IDS.target) ?? (await client.users.fetch(IDS.target)), reason: 'raiding' });
+    await fake.settle();
+    const alertMsg = fake.callsSince(mark).find((c) => c.kind === 'send' && /Ban here too/.test(JSON.stringify(c.body)));
+    check('a ban in a partner server shows up in our mod-log with a "Ban here too" button', alertMsg && alertMsg.route.includes(IDS.modlog) && /raiding/.test(JSON.stringify(alertMsg.body)) && !fake.callsSince(mark).some((c) => c.kind === 'ban'));
+    mark = fake.calls.length;
+    await onBanForNetwork({ guild: partner, user: await client.users.fetch(IDS.target), reason: 'raiding' });
+    await fake.settle();
+    check('the same ban is not alerted twice', !fake.callsSince(mark).some((c) => c.kind === 'send'));
+    if (alertMsg) {
+      const posted = fake.msg(IDS.modlog, alertMsg.body, { author: USERS[IDS.bot] });
+      r = await click(posted, `bannet_ban:${IDS.target}`, { user: IDS.user });
+      check('only moderators can use "Ban here too"', /permission/i.test(r.text) && !r.calls.some((c) => c.kind === 'ban'));
+      r = await click(posted, `bannet_ban:${IDS.target}`, { user: IDS.mod });
+      check('"Ban here too" bans with a case that names the source', r.calls.some((c) => c.kind === 'ban') && (await prisma.case.findFirst({ where: { targetId: IDS.target, type: 'ban', reason: { startsWith: 'Shared ban from Partner Server' } } })), r.text + errText(r));
+    }
+    await prisma.banNetworkMember.update({ where: { guildId: IDS.guild }, data: { mode: 'ban' } });
+    fake.bans.delete(IDS.user2);
+    mark = fake.calls.length;
+    await onBanForNetwork({ guild: partner, user: await client.users.fetch(IDS.user2), reason: 'scam links' });
+    await fake.settle();
+    check('in "ban" mode the bot bans here automatically', fake.callsSince(mark).some((c) => c.kind === 'ban' && c.route.includes(IDS.user2)));
+    mark = fake.calls.length;
+    await onBanForNetwork({ guild: partner, user: await client.users.fetch(IDS.user), reason: 'Shared ban from Elsewhere: x' });
+    await fake.settle();
+    check('bans that were themselves shared are not passed on (no loops)', !fake.callsSince(mark).some((c) => c.kind === 'ban' || c.kind === 'send'));
+    r = await cmd('bannetwork', { sub: 'status', user: IDS.admin });
+    check('/bannetwork status lists the members', /Our community/.test(JSON.stringify(r.calls)), r.text + errText(r));
+    r = await cmd('bannetwork', { sub: 'leave', user: IDS.admin });
+    check('/bannetwork leave', /Left/.test(r.text) && !(await prisma.banNetworkMember.findUnique({ where: { guildId: IDS.guild } })));
+    await prisma.banNetwork.deleteMany({});
+    takeLog();
+  }
+
+  heading('AI triage (with a stand-in classifier)');
+  {
+    const triage = require(`${ROOT}/dist/features/aiTriage`);
+    const seen = [];
+    triage.setClassifierForTests(async (text) => {
+      seen.push(text);
+      return /worthless/.test(text) ? { flagged: true, category: 'harassment', severity: 'high', reason: 'Insult aimed at a member.' } : { flagged: false, category: 'none', severity: 'low', reason: '' };
+    });
+    await prisma.guildConfig.update({ where: { id: IDS.guild }, data: { aiTriageEnabled: false, aiTriageChannelId: IDS.appeals, modLogChannelId: IDS.modlog } });
+    await emitMessage(userMessage(IDS.user, 'you are worthless', IDS.welcome));
+    await fake.settle();
+    check('with the switch off, nothing is sent to the AI', seen.length === 0);
+    await prisma.guildConfig.update({ where: { id: IDS.guild }, data: { aiTriageEnabled: true } });
+    let mark = fake.calls.length;
+    const bad = userMessage(IDS.user, 'you are worthless', IDS.welcome);
+    await emitMessage(bad);
+    await new Promise((r2) => setTimeout(r2, 50));
+    await fake.settle();
+    const review = fake.callsSince(mark).find((c) => c.kind === 'send' && c.route.includes(IDS.appeals));
+    check('a harmful message goes to the review channel with Delete / Looks fine', review && /For review: harassment/.test(JSON.stringify(review.body)) && /triage_del:/.test(JSON.stringify(review.body)) && !fake.callsSince(mark).some((c) => c.kind === 'delete'), JSON.stringify(review?.body).slice(0, 200));
+    check('...and nothing is done to the message by itself', !fake.callsSince(mark).some((c) => c.kind === 'delete' || c.kind === 'ban' || c.kind === 'timeout'));
+    mark = fake.calls.length;
+    await emitMessage(userMessage(IDS.user, 'good game everyone', IDS.welcome));
+    await new Promise((r2) => setTimeout(r2, 50));
+    await fake.settle();
+    check('a harmless message produces no review', !fake.callsSince(mark).some((c) => c.kind === 'send' && c.route.includes(IDS.appeals)));
+    const before = seen.length;
+    await emitMessage(userMessage(IDS.mod, 'you are worthless (quoting the rules)', IDS.welcome));
+    await new Promise((r2) => setTimeout(r2, 50));
+    check("moderators' messages aren't checked", seen.length === before);
+    if (review) {
+      const posted = fake.msg(IDS.appeals, review.body, { author: USERS[IDS.bot] });
+      let r = await click(posted, `triage_del:${IDS.welcome}:${bad.id}`, { user: IDS.user });
+      check('only moderators can act on a review', /moderators/i.test(r.text) && !r.calls.some((c) => c.kind === 'delete'));
+      r = await click(posted, `triage_del:${IDS.welcome}:${bad.id}`, { user: IDS.mod });
+      check('"Delete message" deletes it and records who did', r.calls.some((c) => c.kind === 'delete') && /Deleted by mo_mod/.test(JSON.stringify(r.calls)), r.text + errText(r));
+    }
+    await prisma.guildConfig.update({ where: { id: IDS.guild }, data: { aiTriageEnabled: false, aiTriageChannelId: null } });
+    takeLog();
+  }
+
+  heading('Plugins');
+  {
+    const { loadedPlugins } = require(`${ROOT}/dist/plugins/loader`);
+    const log = pluginLog;
+    check('the example plugin loads, and a broken one is skipped with a reason', loadedPlugins().join() === 'dice-duel' && /Plugin broken\.js was skipped: "name"/.test(log), log.split('\n').filter((l) => /lugin/.test(l)).join(' | '));
+    let r = await cmd('duel', { user: IDS.user, options: [opt.user('opponent', IDS.user2)] });
+    check("a plugin's command works like a built-in one", /rolled \*\*\d\*\*/.test(r.text), r.text + errText(r));
+    let mark = fake.calls.length;
+    await emitMessage(userMessage(IDS.user, 'good game all', IDS.welcome));
+    await fake.settle();
+    check("a plugin's message hook runs", fake.callsSince(mark).some((c) => c.kind === 'send' && /gg/.test(JSON.stringify(c.body))));
+    await setModuleOn(IDS.guild, 'plugins', false);
+    r = await cmd('duel', { user: IDS.user, options: [opt.user('opponent', IDS.user2)] });
+    check('with Plugins switched off in a server, its commands say so', /off/i.test(r.text) && !/rolled/.test(r.text), r.text);
+    mark = fake.calls.length;
+    await emitMessage(userMessage(IDS.user, 'good game again', IDS.welcome));
+    await fake.settle();
+    check('...and its message hook stays quiet there', !fake.callsSince(mark).some((c) => c.kind === 'send' && /gg/.test(JSON.stringify(c.body))));
+    await setModuleOn(IDS.guild, 'plugins', true);
+    takeLog();
+  }
+
   // ── report ──────────────────────────────────────────────────────────────
   const failed = results.filter((r) => !r.ok);
   out(`\n${results.length - failed.length}/${results.length} checks passed${failed.length ? `, ${failed.length} failed:` : '.'}`);
@@ -1119,6 +1429,7 @@ async function emitMessage(raw) {
   const unhandled = fake.calls.filter((c) => c.kind === 'UNHANDLED');
   if (unhandled.length) out(`\n(fake Discord had no answer for: ${[...new Set(unhandled.map((c) => `${c.method} ${c.route}`))].join(', ')})`);
   fs.writeFileSync(path.join(HERE, `results${MUSIC ? '-music' : ''}.json`), JSON.stringify(results, null, 2));
+  fs.rmSync(PLUGIN_DIR, { recursive: true, force: true });
   if (hashBackup) fs.writeFileSync(realHash, hashBackup);
   else fs.rmSync(realHash, { force: true });
   await prisma.$disconnect();

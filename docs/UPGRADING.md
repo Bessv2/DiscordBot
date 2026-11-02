@@ -7,7 +7,7 @@ Migrations run automatically and are forward-only. Back up first anyway (see [BA
 The bot ships as a ready-made image (`ghcr.io/bessv2/discordbot`), so an upgrade is a download, not a rebuild:
 
 ```bash
-./scripts/backup-db.sh
+docker compose exec bot npm run backup
 docker compose pull
 docker compose up -d
 ```
@@ -40,6 +40,14 @@ Older versions of `docker-compose.yml` had `build: .`. Download the current `doc
 ## New bot permissions
 
 When a release adds a feature that needs a new Discord permission, servers that invited the bot earlier don't get it automatically. Open the invite link from the bot's startup log again and authorize it: Discord adds the missing permissions to the bot's role, and nothing else changes. Recent examples: **Create Invite** (`/jam`), **Create Polls** (`/map vote`), **Connect** and **Speak** (`/music`), and in the latest release **Create Private Threads**, **Send Messages in Threads**, **Manage Threads** and **Attach Files** (tickets) and **Move Members** (join-to-create voice).
+
+## 1.0.0: add-ons, Discord AutoMod, ban sharing, AI triage, plugins
+
+- **Database:** three new migrations (`add_addons`, `add_native_automod`, `add_ban_networks_ai_triage`) that only add tables and columns. They run by themselves on start; upgrading a database with data in it was tested.
+- **Permissions:** nothing new is required. A server that turns on "Use Discord's AutoMod" must give the bot's role **Manage Server** (Discord's rule for managing AutoMod); `/setup` says so if it's missing.
+- **New, all optional `.env` lines** (copy the ones you want from `.env.example`): `BACKUP_KEEP` (daily backups, on by default with 7 kept), `ADDONS_ALLOW_PRIVATE_NETWORK`, `AI_TRIAGE_API_KEY` / `AI_TRIAGE_MODEL` / `AI_TRIAGE_MAX_PER_MINUTE`, `ENABLE_PLUGINS` / `PLUGINS_DIR`.
+- **`docker-compose.yml`** gained a read-only `./plugins` mount. Only needed if you'll use plugins; download the new file (or `git pull`) to get it.
+- **Daily backups** start automatically and use a little disk in `data/backups/` (7 copies of the database). Set `BACKUP_KEEP=0` to turn them off.
 
 ## Optional web dashboard
 

@@ -5,6 +5,9 @@ import { handlePrefixCommand } from '../discord/prefixHandler';
 import { handleMessageXp } from '../xp/engine';
 import { logger } from '../lib/logger';
 import { runAutoResponders } from '../features/autoResponders';
+import { triageMessage } from '../features/aiTriage';
+import { loadedPlugins, pluginsOnMessage } from '../plugins/loader';
+import { isModuleEnabledForGuild } from '../lib/modules';
 
 export async function messageCreate(message: Message): Promise<void> {
   if (message.author.bot || !message.inGuild()) return;
@@ -17,6 +20,15 @@ export async function messageCreate(message: Message): Promise<void> {
   });
   // A message auto-mod just deleted shouldn't earn XP or run a prefix command.
   if (flagged) return;
+
+  if (loadedPlugins().length) {
+    await pluginsOnMessage(message, await isModuleEnabledForGuild(message.guild.id, 'plugins'));
+  }
+
+  // Not awaited: an API call must never slow down the rest of the bot.
+  void triageMessage(message).catch((err) => {
+    logger.debug(`AI triage failed in guild ${message.guild.id}: ${(err as Error).message}`);
+  });
 
   await handleMessageXp(message).catch((err) => {
     logger.error(
