@@ -2,6 +2,12 @@
 
 Ready-made images are tagged with each version (`BOT_IMAGE_TAG=1.0.0`, or `1.0.0-music`) as well as `latest` / `music`. How to update, or stay on a version: README → [Updating to a new version](./README.md#updating-to-a-new-version). Database changes run by themselves and only add things; see [`docs/UPGRADING.md`](./docs/UPGRADING.md) for anything a host needs to do.
 
+## Unreleased
+
+**New**
+- **Run it without Docker**, with only Node.js 22.12+ on Windows, macOS, Linux or a Raspberry Pi ([`docs/WITHOUT-DOCKER.md`](./docs/WITHOUT-DOCKER.md)): `npm run setup` (asks for the token, installs, builds, creates the database), `npm run bot` (applies migrations and starts), `npm run update-bot` (backup, `git pull`, rebuild). Double-click `start-bot.cmd` (Windows) or `start-bot.command` (Mac). To keep it running: `ecosystem.config.cjs` for pm2, `deploy/discord-mod-bot.service` for systemd, or a Startup-folder shortcut on Windows.
+- Nothing changes for Docker hosts: no new intents, permissions, `.env` settings or database changes.
+
 ## 1.0.0 (2026-11-02)
 
 The first numbered release: everything below, on top of the moderation, community and game features already in `main`.

@@ -2,7 +2,7 @@
 
 A self-hostable Discord moderation and utility bot. No third-party dashboard, no subscription, no cloud account holding your server's data — you run it, you own the database. See [`PROJECT.md`](./PROJECT.md) for the full project guidelines this bot is built against.
 
-**Never set up a bot before?** Follow [Setup, step by step](#setup-step-by-step) below. It assumes no technical background. You only copy and paste, there's no coding, and it takes about 20 minutes. Already comfortable with Docker? Skip to the [short version](#short-version-for-docker-users).
+**Never set up a bot before?** Follow [Setup, step by step](#setup-step-by-step) below. It assumes no technical background. You only copy and paste, there's no coding, and it takes about 20 minutes. Already comfortable with Docker? Skip to the [short version](#short-version-for-docker-users). Can't or don't want to use Docker? [Run it with just Node.js](./docs/WITHOUT-DOCKER.md) instead: same bot, set up with `npm run setup`, on Windows, Mac, Linux or a Raspberry Pi.
 
 **Already running it?** To update, run `docker compose pull` and then `docker compose up -d` in the bot folder. See [Updating to a new version](#updating-to-a-new-version).
 
@@ -143,6 +143,7 @@ Try `/warn`, `/timeout`, `/cases`, `/userinfo`, `/poll` or `/remind`. Type `/` i
 - **The bot runs only while your computer is on and Docker Desktop is running.** Docker restarts the bot by itself if it crashes, and starts it again whenever Docker Desktop starts.
 - **To have it come back after a reboot:** open Docker Desktop → **Settings** (gear icon) → **General** → tick **Start Docker Desktop when you sign in to your computer**.
 - **To stop the bot:** click the ■ stop button next to **discord-mod-bot** in Docker Desktop. Click ▶ to start it again.
+- **Not using Docker?** See [Keeping it running](./docs/WITHOUT-DOCKER.md#keeping-it-running) in the no-Docker guide (pm2, systemd, or the Windows Startup folder).
 - **For 24/7 uptime** without leaving a PC on: run the same steps on a Raspberry Pi or a cheap ($5/month) Linux VPS, or use [Railway](./docs/RAILWAY.md), which doesn't need a computer at all.
 
 Your data (settings, case history, levels, and so on) lives in the `data` folder inside the bot folder. **To back it up, stop the bot and copy that `data` folder somewhere safe.** See [`docs/BACKUP.md`](./docs/BACKUP.md) for an automatic option.
@@ -189,7 +190,7 @@ Most updates are just the image above. Occasionally a release also changes `dock
 
 **Built it from source instead of using the ready-made image?** Update with `git pull`, then `docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build`.
 
-More detail, including running without Docker, is in [`docs/UPGRADING.md`](./docs/UPGRADING.md).
+More detail is in [`docs/UPGRADING.md`](./docs/UPGRADING.md). Running without Docker? See [`docs/WITHOUT-DOCKER.md`](./docs/WITHOUT-DOCKER.md#updating-to-a-new-version).
 
 ## Troubleshooting
 
@@ -227,16 +228,15 @@ Slash commands are registered automatically on startup whenever their definition
 
 ### Running without Docker
 
-Needs Node.js 22.12+. For `/music`, also install `ffmpeg` and [`yt-dlp`](https://github.com/yt-dlp/yt-dlp#installation) so both are on the `PATH`.
+Needs Node.js 22.12+. Full guide, written for beginners: [`docs/WITHOUT-DOCKER.md`](./docs/WITHOUT-DOCKER.md). The short version:
 
 ```bash
-npm ci
-npm run build
-npm run db:migrate
-npm run start
+npm run setup        # checks Node, makes .env (asks for the token), installs, builds, creates the database
+npm run bot          # applies pending migrations, then runs the bot (Ctrl+C stops it)
+npm run update-bot   # backup, git pull, reinstall, rebuild, migrate
 ```
 
-Use [pm2](https://pm2.keymetrics.io/) (`pm2 start dist/index.js --name discord-mod-bot`) to keep it running and restart on crash.
+On Windows and macOS, double-clicking `start-bot.cmd` / `start-bot.command` does the same as `npm run bot` (and the setup on first run). To keep it running: `pm2 start ecosystem.config.cjs` (Mac/Linux/Pi), the systemd unit in [`deploy/discord-mod-bot.service`](./deploy/discord-mod-bot.service) (Linux), or a shortcut in the Startup folder (Windows). For `/music`, also install `ffmpeg` and [`yt-dlp`](https://github.com/yt-dlp/yt-dlp#installation) so both are on the `PATH`.
 
 ### Deploying on Railway
 
@@ -396,6 +396,7 @@ SQLite is the zero-setup default. To scale up:
 - **Restoring:** stop the bot (`docker compose down`), copy the backup you want over `data/bot.db`, start it again (`docker compose up -d`).
 - [`docs/BACKUP.md`](./docs/BACKUP.md) — more on backups, including Postgres.
 - [`docs/UPGRADING.md`](./docs/UPGRADING.md) — pulling a new version and running migrations without losing data.
+- [`docs/WITHOUT-DOCKER.md`](./docs/WITHOUT-DOCKER.md) — running the bot with only Node.js: setup, keeping it running (pm2, systemd, Windows Startup folder), updating.
 - [`docs/TESTING.md`](./docs/TESTING.md) — a self-contained walkthrough for a friend/tester to clone this, stand up their own bot, and try it against a throwaway server.
 
 ## Health checks & troubleshooting

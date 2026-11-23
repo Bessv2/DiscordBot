@@ -1,0 +1,37 @@
+# systemd service for running the bot without Docker on Linux (including a
+# Raspberry Pi). See docs/WITHOUT-DOCKER.md → "Option C: systemd".
+#
+# 1. Replace the three CHANGE_ME values below:
+#      User              the account that owns the bot folder (not root)
+#      WorkingDirectory  the bot folder, e.g. /home/pi/DiscordBot
+#      ExecStart         the folder Node is in: dirname "$(command -v node)", e.g. /usr/bin
+# 2. sudo cp deploy/discord-mod-bot.service /etc/systemd/system/
+#    sudo systemctl daemon-reload
+#    sudo systemctl enable --now discord-mod-bot
+# 3. Logs: journalctl -u discord-mod-bot -f
+
+[Unit]
+Description=Discord moderation bot
+Wants=network-online.target
+After=network-online.target
+# Stop retrying after 5 failed starts in 10 minutes (e.g. a wrong token),
+# so the log shows the fix instead of an endless restart loop.
+StartLimitIntervalSec=600
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=CHANGE_ME
+WorkingDirectory=CHANGE_ME
+ExecStart=CHANGE_ME/node scripts/local.cjs start
+Restart=on-failure
+RestartSec=10
+# Time to stop music and close the database before systemd forces it.
+TimeoutStopSec=20
+
+# Light hardening that doesn't get in the way of the bot.
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
