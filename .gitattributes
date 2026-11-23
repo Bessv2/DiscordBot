@@ -2,3 +2,6 @@
 # CRLF line endings breaks the shebang ("no such file or directory"), so
 # force LF no matter what the host's git is configured to do.
 *.sh text eol=lf
+*.command text eol=lf
+# Windows batch files need CRLF, or cmd.exe can misread them.
+*.cmd text eol=crlf

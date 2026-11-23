@@ -1,6 +1,6 @@
 # Discord Moderation Bot — Project Notes
 
-Started 2026-09-22 · @Someone · Last updated 2026-11-02
+Started 2026-09-22 · @Someone · Last updated 2026-11-23
 
 The single source of truth for this project: why it exists, the rules it's built by, what's been built, how it fits together, and every decision made along the way. The README is for people **running** the bot; this file is for people **building or maintaining** it, including AI assistants (see §4).
 
@@ -153,6 +153,7 @@ What has to exist before this counts as "actually self-hostable," not just runna
 - [x] **In-Discord `/setup`** covers everything past the quickstart — the feature map (§10).
 - [x] **`.env.example`** with every variable named and commented; only `DISCORD_TOKEN` is required (§12).
 - [x] **Docker Compose as the primary path**, `./data` mounted so data survives updates and rebuilds.
+- [x] **A no-Docker path that's just as short**: `npm run setup` (asks for the token) and `npm run bot`, double-click starters for Windows/macOS, pm2 and systemd files — `docs/WITHOUT-DOCKER.md`.
 - [x] **Startup validation**: config check (zod), writable data dir, database reachable, token and intent errors explained with a `-> Fix:` line; music tools checked when music is on.
 - [x] **Backup guidance**: daily automatic backups (`BACKUP_KEEP`, default 7), `npm run backup` (works on Windows too), `docs/BACKUP.md`.
 - [x] **Upgrade guide**: `docs/UPGRADING.md`; upgrading a populated database was tested for the latest migration.
@@ -193,7 +194,7 @@ Also in place: the bot never pings `@everyone`, `@here` or roles on anyone's beh
 
 - **Everything in Core, v1.x, Fun/Game, the all-in-one assistant set, and all of v2 except cross-server announcements is built.** 55 slash commands, 127 including subcommands; 34 modules (33 switchable per server; AI triage is off by default). First numbered release: v1.0.0.
 - **Web dashboard** (optional, off by default): the same settings as `/setup`, add-ons, lists and the case history (with export), in a browser.
-- **Checks:** 180 unit tests; the end-to-end check (§15) passes 298/298 (302/302 with music on) and runs in CI on every PR. `npm audit --omit=dev`: 0 vulnerabilities.
+- **Checks:** 191 unit tests; the end-to-end check (§15) passes 298/298 (302/302 with music on) and runs in CI on every PR. `npm audit --omit=dev`: 0 vulnerabilities.
 - **Images published:** `ghcr.io/bessv2/discordbot:latest` and `:music` (amd64 + arm64), public, built from `main`; versioned tags from `v*` tags.
 - **Not yet verified against live Discord:** voice playback for `/music`, launching Watch Together from `/jam`, the dashboard behind a real reverse proxy, real AutoMod rules, real AI triage calls (CI uses a stand-in), and add-ons against live feeds. The owner confirmed a host can pull and run the published images. Everything else was exercised end to end against a simulated Discord, not a real one.
 - **Owner to-dos (GitHub settings, can't be done from code):**
@@ -234,7 +235,9 @@ src/
   reminders/ birthdays/ streaming/ xp/   jobs and engines used by the scheduler and events
   music/              resolve.ts (yt-dlp lookups, pure parsing), player.ts (voice; lazy-loaded), check.ts
   data/               built-in trivia questions
-prisma/               schema.prisma + migrations (applied automatically by docker-entrypoint.sh)
+prisma/               schema.prisma + migrations (applied automatically by docker-entrypoint.sh, or scripts/local.cjs without Docker)
+scripts/ (repo root)  local.cjs: the no-Docker launcher (setup / start / update); local-helpers.cjs (pure, tested)
+deploy/               discord-mod-bot.service (systemd); ecosystem.config.cjs (pm2) and start-bot.cmd / .command sit at the root
 tests/                vitest unit tests; tests/e2e: end-to-end check against a simulated Discord
 docs/                 BACKUP, UPGRADING, TESTING, RAILWAY
 .github/workflows/    docker-image.yml: checks + image builds
@@ -363,7 +366,8 @@ Intents: Guilds, GuildMessages, GuildMessageReactions, GuildVoiceStates and Guil
 - **Releases.** A `v*` git tag (e.g. `v1.0.0`) publishes `1.0.0` and `1.0.0-music` images alongside `latest`/`music`; `CHANGELOG.md` lists what changed. Hosts pin with `BOT_IMAGE_TAG=1.0.0`.
 - **Startup** (`docker-entrypoint.sh`): `prisma migrate deploy`, then (music only) `yt-dlp -U`, then the bot.
 - **Updates.** Manual: `docker compose pull && docker compose up -d`. Automatic (opt-in): `COMPOSE_PROFILES=autoupdate` adds `nickfedor/watchtower:1.23.2`, which only updates containers labelled `com.centurylinklabs.watchtower.enable=true` (just the bot), daily at 04:00, and cleans up old images.
-- **Other paths.** Railway builds the Dockerfile itself (`docs/RAILWAY.md`; set `MUSIC=true` there for music). Bare Node: `npm ci && npm run build && npm run db:migrate && npm start`, with pm2.
+- **Without Docker** (`docs/WITHOUT-DOCKER.md`). `scripts/local.cjs` does what the image and entrypoint do, with only Node 22.12+: `setup` checks Node, copies `.env.example`, asks for the token (hidden input, only on a terminal), `npm ci --include=dev`, builds, migrates; `start` (`npm run bot`) migrates, runs `yt-dlp -U` with music on, then loads `dist/index.js` in the same process so signals reach the bot's shutdown handler; `update` (`npm run update-bot`) backs up, `git pull --ff-only`, then setup. Child commands get `CHECKPOINT_DISABLE=1`. Keeping it running: `ecosystem.config.cjs` (pm2, backoff and a restart cap), `deploy/discord-mod-bot.service` (systemd), or a Startup-folder shortcut to `start-bot.cmd` (Windows).
+- **Other paths.** Railway builds the Dockerfile itself (`docs/RAILWAY.md`; set `MUSIC=true` there for music).
 
 ## 14. Data Model
 
@@ -373,7 +377,7 @@ Migrations, in order: `init` (v1 core) → `add_v1x_and_fun_modules` → `add_pr
 
 ## 15. Testing & Verification
 
-- **Unit tests** (`npm test`, 180): auto-mod detectors, permission gate, role hierarchy and role-assign checks, durations, dice, economy payouts and daily reset, XP curve, raid detection, brackets, activity-role matching, module switches and registry consistency, map parsing, music query classification and yt-dlp output parsing, `/setup` status logic, purge selection, auto-responder matching, announcement repeats, ticket transcripts, server-log switches, message-text redaction, dashboard sign-in tokens and sessions, field validation, HTML escaping, feed/Epic/webhook parsing, private-address blocking, AutoMod rule building, case export (CSV formula defusing), backups, ban sharing, AI triage parsing and rate caps, and plugin validation.
+- **Unit tests** (`npm test`, 191): auto-mod detectors, permission gate, role hierarchy and role-assign checks, durations, dice, economy payouts and daily reset, XP curve, raid detection, brackets, activity-role matching, module switches and registry consistency, map parsing, music query classification and yt-dlp output parsing, `/setup` status logic, purge selection, auto-responder matching, announcement repeats, ticket transcripts, server-log switches, message-text redaction, dashboard sign-in tokens and sessions, field validation, HTML escaping, feed/Epic/webhook parsing, private-address blocking, AutoMod rule building, case export (CSV formula defusing), backups, ban sharing, AI triage parsing and rate caps, and plugin validation, and the no-Docker launcher's Node-version and `.env` helpers.
 - **CI**: the same checks on every PR, plus test builds of both images.
 - **End-to-end check** (`npm run build && npm run test:e2e`, `tests/e2e/`, runs in CI): the real bot code and a real SQLite database, with discord.js's network layer replaced by a simulated Discord that records every API call. It drives all 55 commands (plus the example plugin's), every `/setup` screen and button, auto-mod, XP and auto-responders via message events, reaction roles, starboard, welcome, join roles and Verify, appeals, tickets (thread, transcript, close), giveaways, suggestions, server logs (deletes, edits, roles, bans, voice), join-to-create voice, the scheduler jobs, and the web dashboard over real HTTP (sign-in link used once, CSRF refusal, toggles, saving and refusing settings, role hierarchy, XSS escaping, a non-admin session ended, sign-out), add-ons (a local feed server, webhooks over HTTP), Discord AutoMod rule sync, exports and the Lists page, ban sharing, AI triage with a stand-in classifier (CI never calls the API), and plugins: 298/298 checks, 302/302 with music on (`-- --music`). The yt-dlp → ffmpeg → Opus pipeline was checked separately with a stand-in yt-dlp (3 s of audio → 151 Opus packets). Bugs it has found and that were fixed: `/unmute` not recording a case, module switches failing for a server with no settings row, and `/unban` trusting a stale ban cache.
 - **Manual test walkthrough** for a fresh server: `docs/TESTING.md`.
@@ -408,6 +412,7 @@ Decisions already made, so they don't get relitigated. Newest last.
 - **2026-11-02 — AI triage uses Claude through the official SDK, default `claude-opus-5-5` at low effort**, with the model overridable by the host. It never acts by itself and is opt-in twice (host key + server switch).
 - **2026-11-02 — Plugins are local files only, with full access**, off by default, mounted read-only. No sandbox (it would give a false sense of safety) and no store (§5).
 - **2026-11-02 — Daily backups are on by default** (7 kept), because a self-hoster who never set up backups is the common case and a copy of a small SQLite file is cheap.
+- **2026-11-23 — The no-Docker launcher is a dependency-free CommonJS script, not a shell script.** One file works the same on Windows, macOS and Linux (no `.sh`/`.ps1` pair to keep in step) and can run before `node_modules` exists. It runs the bot in its own process instead of spawning a child, so there's no extra Node process and Ctrl+C/pm2/systemd signals go straight to the bot. `npm start` still means `node dist/index.js`, unchanged for anyone already using it.
 - **2026-11-01 — `/setup` has one menu per group** (Moderation, Community, Games & fun), because a Discord menu holds at most 25 options and there are now 33 features.
 
 ## 17. Known Gaps & Open Items
@@ -441,3 +446,4 @@ Fixed on 2026-11-01: legacy `!` commands now have a `/setup` switch; message tex
 - **2026-11-01** — All-in-one assistant (PR #6): the three known gaps fixed; moderation essentials; server logs; tickets; suggestions; giveaways; join roles and Verify; auto-responders; announcements; join-to-create voice; `/help`; `/setup` menus per group; end-to-end check committed and run in CI.
 - **PR #6 (2026-11-01)** — Full Discord assistant (moderation essentials, server logs, tickets, giveaways, suggestions, join roles, auto-responders, announcements, voice rooms) and the optional web dashboard.
 - **v1.0.0 (2026-11-02)** — Security updates (undici, zod 4, vitest 4); add-ons and webhooks; Discord AutoMod option; ban sharing; AI triage; case export; dashboard Lists page and mod-log notes; daily backups; plugins; versioned releases.
+- **2026-11-23** — Running without Docker: `npm run setup` / `npm run bot` / `npm run update-bot`, double-click starters, pm2 and systemd files, `docs/WITHOUT-DOCKER.md`.

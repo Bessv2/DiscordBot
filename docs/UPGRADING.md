@@ -22,16 +22,15 @@ On boot, `docker-entrypoint.sh` runs `prisma migrate deploy` before starting the
 docker compose logs -f
 ```
 
-## Bare Node
+## Without Docker
+
+Stop the bot, then in the bot folder:
 
 ```bash
-./scripts/backup-db.sh
-git pull
-npm ci
-npm run db:migrate
-npm run build
-npm run start   # or: pm2 restart discord-mod-bot
+npm run update-bot
 ```
+
+It backs up the database, runs `git pull`, reinstalls, rebuilds and applies migrations. Start the bot again (`npm run bot`, `pm2 start discord-mod-bot` or `sudo systemctl start discord-mod-bot`). Downloaded as a ZIP instead of git: see [`WITHOUT-DOCKER.md`](./WITHOUT-DOCKER.md#updating-to-a-new-version). `npm run bot` also applies pending migrations on every start, like the Docker image.
 
 ## Upgrading from a version that built the image locally
 
